@@ -18,7 +18,7 @@ type Strategy interface {
 // MultiStrategy interface using Data type as Event condition
 // Events can be built from multiple Symbol or Timeframe conditions
 type MultiStrategy interface {
-	Event(Data) (Event, bool)
+	Event(*Data) (Event, bool)
 }
 
 // Events strategy Event on bars data
@@ -43,11 +43,11 @@ func (bars Bars) Events(strategies ...Strategy) (Event, bool) {
 	return event, !event.Time.IsZero()
 }
 
-// Events strategys compatible with both Strategy (bars) and MultiStrategy
-func (data Data) Events(strategies ...interface{}) (Events, error) {
+// Events strategys compatible with both Strategy (bars) and MultiStrategy (data)
+func (data *Data) Events(strategies ...interface{}) (Events, error) {
 	events := make(Events, 0)
 	if len(data.History) == 0 {
-		return events, errors.New("no histories")
+		return events, errNoHist
 	}
 	log.Printf("Scanning Events %T\n", strategies)
 
@@ -109,6 +109,7 @@ func (bars Bars) Test(strat Strategy, start, end time.Time) (Events, error) {
 	}
 	log.Printf("Test %T...\t %v --> %v\n", strat, start.Format(tformat), end.Format(tformat))
 
+	// stream the bars
 	for b := range bars.Stream(start, end, bars.Period()) {
 
 		if event, ok := strat.Event(b); ok {
@@ -127,7 +128,7 @@ func (bars Bars) Test(strat Strategy, start, end time.Time) (Events, error) {
 }
 
 // Test strategys compatible with both Strategy (bars) and MultiStrategy
-func (data Data) Test(strat interface{}, start, end time.Time) (Events, error) {
+func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) {
 	events := make(Events, 0)
 	if len(data.History) == 0 {
 		return events, errors.New("no histories")
@@ -256,16 +257,17 @@ func (data *Data) Subscribe(events *Events, strategies ...Strategy) {
 				if !ok {
 					log.Println("Subscriber stopped.")
 				}
+
 				symbol, timeframe := Split(s)
 				if symbol == "" || timeframe == "" {
 					continue
 				}
 				bars := data.Bars(symbol, timeframe)
 				if event, ok := bars.Events(strategies...); ok && !events.Exist(event) {
-
 					event.Symbol = symbol
 					event.Timeframe = timeframe
 					*events = append(*events, event)
+
 					fmt.Printf("%s%s [%s] %s\n", symbol, timeframe, event.Type, event.Name)
 				}
 			default:

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// add streamDelay and
+// --- add streamer delay ---------------------- not done -------------------------
 
 // Streamer streams data, historys or bars
 type Streamer interface {
@@ -22,7 +22,6 @@ func (bars Bars) Streamer() <-chan Bars {
 	}
 
 	go func() {
-
 		for i := len(bars) - 1; i >= 0; i-- {
 			c <- bars[i : len(bars)-1]
 		}
@@ -32,7 +31,7 @@ func (bars Bars) Streamer() <-chan Bars {
 	return c
 }
 
-// Stream ...
+// Stream bars
 func (bars Bars) Stream(start, end time.Time, interval time.Duration) <-chan Bars {
 	c := make(chan Bars, 1)
 
@@ -43,12 +42,12 @@ func (bars Bars) Stream(start, end time.Time, interval time.Duration) <-chan Bar
 	}
 	// check if our time is within bars first last times, adjust if needed
 	if first := bars[len(bars)-1].Time; !first.IsZero() {
-		if start.Before(first) {
+		if start.IsZero() || start.Before(first) {
 			start = first
 		}
 	}
 	if last := bars[0].Time; !last.IsZero() {
-		if end.After(last) {
+		if end.IsZero() || end.After(last) {
 			end = last
 		}
 	}
@@ -78,18 +77,18 @@ func (bars Bars) Stream(start, end time.Time, interval time.Duration) <-chan Bar
 	return c
 }
 
-// Stream data ...
-func (data *Data) Stream(start, end time.Time, interval time.Duration) <-chan Data {
-	c := make(chan Data, 1)
+// Stream all Data
+func (data *Data) Stream(start, end time.Time, interval time.Duration) <-chan *Data {
+	c := make(chan *Data, 1)
 
 	// check if our time is within bars first last times, adjust if needed
 	if first := data.FirstTime(); !first.IsZero() {
-		if start.Before(first) {
+		if start.IsZero() || start.Before(first) {
 			start = first
 		}
 	}
 	if last := data.LastTime(); !last.IsZero() {
-		if end.After(last) {
+		if end.IsZero() || end.After(last) {
 			end = last
 		}
 	}
@@ -113,20 +112,24 @@ func (data *Data) Stream(start, end time.Time, interval time.Duration) <-chan Da
 			for _, h := range data.History {
 
 				wg.Add(1)
-				go func(h *History) {
+				go func(h *History, wg *sync.WaitGroup) {
 					defer wg.Done()
 
 					// get history from timespan
-					hist := h.TimeSpan(start, dt)
+					// create new prevents from copying lock
+					hist := new(History)
+					hist.Symbol = h.Symbol
+					hist.Timeframe = h.Timeframe
+					hist.Bars = h.Bars.TimeSpan(start, end)
 
 					stream.Lock()
-					stream.History = append(stream.History, &hist)
+					stream.History = append(stream.History, hist)
 					stream.Unlock()
-				}(h)
+				}(h, &wg)
 			}
 
 			wg.Wait()
-			c <- *stream
+			c <- stream
 		}
 		close(c)
 	}()

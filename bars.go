@@ -5,6 +5,16 @@ import (
 	"time"
 )
 
+// History wraps Bars with aditional info Symbol,Timeframe,lastUpdated info.
+// It has no functions as all ata is controlled from Data and Bars type
+type History struct {
+	Symbol    string
+	Timeframe string
+	Bars      Bars
+
+	lastUpdate time.Time
+}
+
 // Bars type holds all functions for bars
 type Bars []Bar
 

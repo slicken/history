@@ -3,7 +3,6 @@ package history
 import (
 	"errors"
 	"log"
-	"math"
 	"sync"
 	"time"
 )
@@ -16,19 +15,32 @@ var (
 // Data is ExchangeData
 type Data struct {
 	History []*History
+	update  bool
+	// C notify channel when a history has been updated
+	C chan string
 	sync.RWMutex
 
 	// Plug diffrent downloaders
 	Downloader
-	update bool
-	// C notify channel when a history has been updated
-	C chan string
 }
 
 // Downloader interface to plug diffrent data providers
 type Downloader interface {
 	// Download downloads and returns bars
 	Download(symbol, timeframe string, limit int) (Bars, error)
+}
+
+// List returns string slice of loaded historys
+func (d *Data) List() []string {
+	var list []string
+
+	d.RLock()
+	defer d.RUnlock()
+
+	for _, hist := range d.History {
+		list = append(list, string(hist.Symbol+hist.Timeframe))
+	}
+	return list
 }
 
 // history returns bars wrapped with settings
@@ -52,8 +64,6 @@ func (d *Data) Bars(symbol, timeframe string) Bars {
 		return nil
 	}
 
-	hist.RLock()
-	defer hist.RUnlock()
 	return hist.Bars
 }
 
@@ -64,16 +74,46 @@ func (d *Data) TimeSpan(start, end time.Time) *Data {
 	for _, h := range d.History {
 
 		wg.Add(1)
-		go func(h *History) {
+		go func(h *History, wg *sync.WaitGroup) {
 			defer wg.Done()
 
 			h.Bars = h.Bars.TimeSpan(start, end)
-		}(h)
+		}(h, &wg)
 	}
 
 	wg.Wait()
 	return d
 }
+
+// // TimeSpan returns all histories for given times
+// func (d *Data) TimeSpan(start, end time.Time) *Data {
+// 	// make new data so we dont cut the methods data
+// 	data := new(Data)
+// 	data.Downloader = d.Downloader
+// 	data.update = d.update
+// 	data.C = d.C
+
+// 	var wg sync.WaitGroup
+
+// 	for _, h := range d.History {
+
+// 		wg.Add(1)
+// 		go func(h *History, wg *sync.WaitGroup) {
+// 			defer wg.Done()
+
+// 			hist := new(History)
+// 			hist.Symbol = h.Symbol
+// 			hist.Timeframe = h.Timeframe
+// 			hist.Bars = h.Bars.TimeSpan(start, end)
+// 			data.Lock()
+// 			data.History = append(data.History, hist)
+// 			data.Unlock()
+// 		}(h, &wg)
+// 	}
+
+// 	wg.Wait()
+// 	return data
+// }
 
 // Period returns minimum period of historys
 func (d *Data) Period() time.Duration {
@@ -100,9 +140,6 @@ func (d *Data) FirstTime() time.Time {
 	for _, hist := range d.History {
 
 		func(h *History) {
-
-			h.RLock()
-			defer h.RUnlock()
 			if len(h.Bars) == 0 {
 				return
 			}
@@ -127,9 +164,6 @@ func (d *Data) LastTime() time.Time {
 	for _, hist := range d.History {
 
 		func(h *History) {
-
-			h.RLock()
-			defer h.RUnlock()
 			if len(h.Bars) == 0 {
 				return
 			}
@@ -152,14 +186,6 @@ func (d *Data) Delete(symbol, timeframe string) error {
 	defer d.Unlock()
 	for i, hist := range d.History {
 		if hist.Symbol == symbol && hist.Timeframe == timeframe {
-
-			select {
-			case _, open := <-hist.update:
-				if open {
-					close(hist.update)
-				}
-			default:
-			}
 			// d.History = append(d.History[:i], d.History[:i+1]...)
 			l := len(d.History) - 1
 			d.History[i] = d.History[l]
@@ -174,7 +200,7 @@ func (d *Data) Delete(symbol, timeframe string) error {
 // Load loads symbols from slice defined with symboltf strings
 func (d *Data) Load(symbols []string) error {
 
-	// var wg sync.WaitGroup
+	var wg sync.WaitGroup
 	for _, s := range symbols {
 		if s == "" { //						---------------- fix so we can remove this --------------
 			continue
@@ -184,20 +210,20 @@ func (d *Data) Load(symbols []string) error {
 			log.Printf("could not load %s. invalid input\n", symbol+timeframe)
 			continue
 		}
-		// wg.Add(1)
-		// go func(symbol, timeframe string) {
-		// 	defer wg.Done()
+		wg.Add(1)
+		go func(symbol, timeframe string, wg *sync.WaitGroup) { // is this working properly ?
+			defer wg.Done()
 
-		bars, _ := ReadBars(symbol, timeframe)
-		d.Add(symbol, timeframe, &bars)
-		// }(symbol, timeframe)
+			bars, _ := ReadBars(symbol, timeframe)
+			d.Add(symbol, timeframe, &bars)
+		}(symbol, timeframe, &wg)
 	}
 
-	// wg.Wait()
+	wg.Wait()
 	return nil
 }
 
-// Add adds new history saftly
+// Add adds new history safely
 func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 
 	// create or get history
@@ -233,13 +259,14 @@ func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 			bars = merge(&hist.Bars, bars)
 		}
 
-		hist.Lock()
+		d.Lock()
 		hist.Bars = *bars
+		hist.lastUpdate = time.Now()
 		// save to file
 		if err = SaveBars(symbol, timeframe, &hist.Bars); err != nil {
 			log.Printf("could not save %s%s bars: %v\n", hist.Symbol, hist.Timeframe, err)
 		}
-		hist.Unlock()
+		d.Unlock()
 
 		log.Printf("%s%s %s\n", hist.Symbol, hist.Timeframe, update)
 
@@ -250,50 +277,70 @@ func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 		}
 	}
 
-	// kick off updateHandler
-	if d.update {
-		hist.updateHandler(d)
-	}
-
 	return nil
 }
 
-// Update enabled history updates on each
-// if alredy enabled it will force download all histories
+// Update enables/disables new data updates
 func (d *Data) Update(enabled bool) {
 	d.Lock()
-	defer d.Unlock()
-	var limit int
-	var old bool
-	old = d.update
 	d.update = enabled
+	d.Unlock()
 
-	for _, hist := range d.History {
+	go func() {
 
-		switch enabled {
-		case true:
-			hist.updateHandler(d)
-
-			if old == false {
-				continue
+		for {
+			d.RLock()
+			enabled = d.update
+			d.RUnlock()
+			if !enabled {
+				return
 			}
-			limit = maxlimit
-			if len(hist.Bars) > 0 {
-				limit = int(math.Max(float64(calcLimit(hist.Bars[0].Time, hist.Timeframe)), 1))
-			}
-			hist.update <- limit
 
-		case false:
-			// close updates channel for history
-			// this will return from updates loop
-			select {
-			case _, open := <-hist.update:
-				if open {
-					close(hist.update)
+			d.RLock()
+			for _, hist := range d.History {
+
+				limit := maxlimit
+				if len(hist.Bars) != 0 {
+					limit = calcLimit(hist.Bars[0].Time, hist.Timeframe)
 				}
-			default:
-			}
 
+				if limit == 0 {
+					continue
+				}
+
+				go d.updateHistory(hist, limit)
+			}
+			d.RUnlock()
+
+			time.Sleep(5 * time.Second)
 		}
+	}()
+}
+
+// updateHistory downloads and updates history
+func (d *Data) updateHistory(h *History, limit int) {
+	if !time.Now().After(h.lastUpdate) {
+		return
 	}
+
+	var err error
+	tries := 0
+
+	for tries < maxtries {
+		bars, err := d.Download(h.Symbol, h.Timeframe, limit)
+		if err != nil {
+			// try again
+			tries++
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		// success. update history
+		log.Printf("%s%s downloaded %d bar(s)\n", h.Symbol, h.Timeframe, len(bars))
+		d.Add(h.Symbol, h.Timeframe, &bars)
+		return
+	}
+
+	// failed. penatly time added
+	log.Printf("failed to download %d bar(s) for %s%s: %v\n", limit, h.Symbol, h.Timeframe, err)
+	h.lastUpdate = time.Now().Add(10 * time.Minute)
 }

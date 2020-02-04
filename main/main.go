@@ -5,13 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/slicken/history/charts"
 
-	"github.com/julienschmidt/httprouter"
 	"github.com/slicken/history"
 )
 
@@ -29,7 +29,9 @@ var (
 // Config ..
 type Config struct {
 	// strategies
-	MA, Engulf, Pin, Dildo bool
+	EMA, SMA, Engulf, Pin, Test, TD bool
+	sma1, sma2, sma3                int
+	ema1, ema2, ema3                int
 	// app settings
 	tf                 string
 	quote              string
@@ -46,10 +48,20 @@ func main() {
 	flag.StringVar(&conf.quote, "quote", "BTC", "build symbol from quote currencie")
 	flag.IntVar(&conf.shift, "shift", 1, "shift analys")
 	// STRATEGIES
-	flag.BoolVar(&conf.MA, "ma", true, "SMAEMA signals")
-	flag.BoolVar(&conf.Engulf, "engulf", true, "Engulf signals")
-	flag.BoolVar(&conf.Pin, "pin", true, "Pinpar signals")
-	flag.BoolVar(&conf.Dildo, "dildo", true, "Dildo signals")
+	flag.BoolVar(&conf.SMA, "sma", false, "SMA signals")
+	flag.IntVar(&conf.sma1, "sma1", 0, "sma1 lenght")
+	flag.IntVar(&conf.sma2, "sma2", 0, "sma2 lenght")
+	flag.IntVar(&conf.sma3, "sma3", 0, "sma3 lenght")
+
+	flag.BoolVar(&conf.EMA, "ema", false, "EMA signals")
+	flag.IntVar(&conf.ema1, "ema1", 0, "ema1 lenght")
+	flag.IntVar(&conf.ema2, "ema2", 0, "ema2 lenght")
+	flag.IntVar(&conf.ema3, "ema3", 0, "ema3 lenght")
+
+	flag.BoolVar(&conf.Engulf, "engulf", false, "Engulf signals")
+	flag.BoolVar(&conf.Pin, "pin", false, "Pinbar signals")
+	flag.BoolVar(&conf.TD, "td", false, "TD Sequential 9")
+	flag.BoolVar(&conf.Test, "test", false, "Test event")
 	// LIMITS
 	flag.IntVar(&conf.emax, "emax", 50, "maximum events to show on site")
 	flag.IntVar(&conf.limit, "limit", 210, "maximum bars to limit the history too")
@@ -60,8 +72,11 @@ func main() {
 	flag.Parse()
 
 	// STRATEGIES
-	if conf.MA {
-		strat = append(strat, &SMAEMA{shift: conf.shift})
+	if conf.SMA {
+		strat = append(strat, &SMA{shift: conf.shift, period: []int{conf.sma1, conf.sma2, conf.sma3}})
+	}
+	if conf.EMA {
+		strat = append(strat, &EMA{shift: conf.shift, period: []int{conf.ema1, conf.ema2, conf.ema3}})
 	}
 	if conf.Engulf {
 		strat = append(strat, &Engulf{shift: conf.shift})
@@ -69,12 +84,22 @@ func main() {
 	if conf.Pin {
 		strat = append(strat, &Pin{shift: conf.shift})
 	}
-	if conf.Dildo {
-		strat = append(strat, &Dildo{shift: conf.shift})
+	if conf.TD {
+		strat = append(strat, &TD{shift: conf.shift})
 	}
+	if conf.Test {
+		strat = append(strat, &Test{shift: conf.shift, ema: []int{conf.ema1, conf.ema2, conf.ema3}})
+	}
+
 	if len(strat) == 0 {
-		log.Fatal("no strategies enabled.")
+		log.Fatalf("Choose strategies: -sma | -ema | -engulf | -pin | -td\n")
 	}
+
+	// TF
+	if history.Tfs(history.Tf(conf.tf)) == "" {
+		log.Fatalln("unknown timeframe")
+	}
+	conf.tf = history.Tfs(history.Tf(conf.tf))
 
 	// MAKE SYMBOLS
 	symbols, err := MakeSymbolTimeframe(conf.quote, conf.tf)
@@ -82,72 +107,129 @@ func main() {
 		log.Fatal("could not build symbols from exchange data:", err)
 	}
 	log.Println("initalizing...")
+	// LOAD SYMBOLS SETTINGS AND DOWNLOAD DATA
 
 	data.Downloader = &Binance{}
-	data.Update(true)
+	// data.Load([]string{"BTCUSDT1h"})
 	data.Load(symbols)
+	data.Update(true)
 
-	// APP LOOP -->
-	go func() {
-		var snames string
-		for _, strat := range strat {
-			snames += fmt.Sprintf("%T ", strat)[6:]
-		}
+	// Subscribe to strategies
+	data.Subscribe(&events, strat...)
 
-		log.Printf("Running strategies %s\n", snames)
+	// APP LOOP ---------------------------------------------------------------------->
 
-		for {
-
-			select {
-			case s, ok := <-data.C:
-				if !ok {
-					log.Println("Strategies stopped.")
-					return
-				}
-
-				symbol, timeframe := history.Split(s)
-				if symbol == "" || timeframe == "" {
-					continue
-				}
-				bars := data.Bars(symbol, timeframe)
-				if event, ok := bars.Events(strat...); ok && !events.Exist(event) {
-					event.Symbol = symbol
-					event.Timeframe = timeframe
-					events = append(events, event)
-
-					fmt.Printf("%s%s [%s] %s\n", symbol, timeframe, event.Type, event.Name)
-					// limit the events to maximum 50 events
-					num := len(events)
-					if num > conf.emax {
-						events = events[(num - conf.emax):]
-					}
-				}
-			default:
-				time.Sleep(time.Second)
+	/*
+		go func() {
+			var snames string
+			for _, strat := range strat {
+				snames += fmt.Sprintf("%T ", strat)[6:]
 			}
 
-		}
-	}()
+			log.Printf("Running strategies %s\n", snames)
 
+			for {
+
+				select {
+				case s, ok := <-data.C:
+					if !ok {
+						log.Println("Strategies stopped.")
+						return
+					}
+
+					symbol, timeframe := history.Split(s)
+					if symbol == "" || timeframe == "" {
+						continue
+					}
+					bars := data.Bars(symbol, timeframe)
+					if event, ok := bars.Events(strat...); ok && !events.Exist(event) {
+						event.Symbol = symbol
+						event.Timeframe = timeframe
+						events = append(events, event)
+
+						fmt.Printf("%s%s [%s] %s\n", symbol, timeframe, event.Type, event.Name)
+						// limit the events to maximum 50 events
+						num := len(events)
+						if num > conf.emax {
+							events = events[(num - conf.emax):]
+						}
+					}
+				default:
+					time.Sleep(time.Second)
+				}
+
+			}
+		}()
+	*/
 	// CHART SETTINGS
 	chart.Type = charts.ChartType(conf.ctype)
 	chart.Volume = conf.volume
-	chart.EMA = []int{21, 55}
-	chart.SMA = []int{200}
 
-	r := httprouter.New()
-	r.GET("/", httpEvents)
-	log.Fatal(http.ListenAndServe(":8080", r))
+	if conf.ema1 != 0 {
+		chart.EMA = append(chart.EMA, conf.ema1)
+	}
+	if conf.ema2 != 0 {
+		chart.EMA = append(chart.EMA, conf.ema2)
+	}
+	if conf.ema3 != 0 {
+		chart.EMA = append(chart.EMA, conf.ema3)
+	}
+	if conf.sma1 != 0 {
+		chart.SMA = append(chart.SMA, conf.sma1)
+	}
+	if conf.sma2 != 0 {
+		chart.SMA = append(chart.SMA, conf.sma2)
+	}
+	if conf.sma3 != 0 {
+		chart.SMA = append(chart.SMA, conf.sma3)
+	}
+
+	http.HandleFunc("/", httpScanEvents)
+	http.HandleFunc("/test", httpBacktestEvents)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }
 
-func httpEvents(w http.ResponseWriter, r *http.Request, q httprouter.Params) {
-	c, err := chart.BuildCharts(data, events)
+func httpScanEvents(w http.ResponseWriter, r *http.Request) {
+
+	// limit data
+	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
+	start := time.Now().Add(-min)
+	datacut := data.TimeSpan(start, time.Now())
+
+	// build chart
+	c, err := chart.BuildCharts(datacut, events)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.Write(c)
+}
+
+func httpBacktestEvents(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Backtesting %T\n", strat)
+
+	// limit data
+	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
+	start := time.Now().Add(-min)
+	datacut := data.TimeSpan(start, time.Now())
+
+	// run strategy backtest on all data
+	ev, err := datacut.Test(strat[0], datacut.FirstTime(), datacut.LastTime())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// build charts
+	c, err := chart.BuildCharts(datacut, ev)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(c)
+
 }
 
 // wait key
@@ -156,52 +238,83 @@ func wait(v string) {
 	bufio.NewReader(os.Stdin).ReadBytes('\n')
 }
 
-// SMAEMA ..
-type SMAEMA struct {
-	shift int
+// EMA ..
+type EMA struct {
+	shift  int
+	period []int
 }
 
 // Event ..
-func (s *SMAEMA) Event(bars history.Bars) (history.Event, bool) {
+func (s *EMA) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	if s.shift+201 > len(bars) {
-		return event, false
+	var buy, sell []int
+	for _, per := range s.period {
+		if per == 0 || len(bars) < per {
+			continue
+		}
+
+		ema := bars[s.shift : s.shift+per].EMA(history.C)
+		if bars[s.shift].Open > ema && bars[s.shift].Low <= ema {
+			buy = append(buy, per)
+		}
+		if bars[s.shift].Open < ema && bars[s.shift].High >= ema {
+			sell = append(sell, per)
+		}
 	}
 
-	ema21 := bars[s.shift : s.shift+21].EMA(history.C)
-	ema55 := bars[s.shift : s.shift+55].EMA(history.C)
-	// ema89 := bars[s.shift : s.shift+89].EMA(history.C)
-	// sma100 := bars[s.shift : s.shift+100].SMA(history.C)
-	sma200 := bars[s.shift : s.shift+200].SMA(history.C)
-
-	w21 := bars[s.shift].Open > ema21 && bars[s.shift].Low < ema21 // && bars[s.shift].Close > ema21
-	w55 := bars[s.shift].Open > ema55 && bars[s.shift].Low < ema55 // && bars[s.shift].Close > ema55
-	// w89 := bars[s.shift].Open > ema89 && bars[s.shift].Low < ema89 // && bars[s.shift].Close > ema89
-	// w100 := bars[s.shift].Open > sma100 && bars[s.shift].Low < sma100 // && bars[s.shift].Close > sma100
-	w200 := bars[s.shift].Open > sma200 && bars[s.shift].Low < sma200 // && bars[s.shift].Close > sma200
-
-	var wicks []int
-	if w21 {
-		wicks = append(wicks, 21)
-	}
-	if w55 {
-		wicks = append(wicks, 55)
-	}
-	// if w89 {
-	// 	wicks = append(wicks, 89)
-	// }
-	// if w100 {
-	// 	wicks = append(wicks, 100)
-	// }
-	if w200 {
-		wicks = append(wicks, 200)
-	}
-
-	if len(wicks) > 1 {
+	if len(buy) > 0 {
 		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
-		event.Name = fmt.Sprintf("%v", wicks)
-		event.Name = "SMAEMA"
+		event.Name = fmt.Sprintf("%v", buy)
+		event.Name = "EMA"
+		return event, true
+	}
+	if len(sell) > 0 {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = fmt.Sprintf("%v", sell)
+		event.Name = "EMA"
+		return event, true
+	}
+
+	return event, false
+}
+
+// SMA ..
+type SMA struct {
+	shift  int
+	period []int
+}
+
+// Event ..
+func (s *SMA) Event(bars history.Bars) (history.Event, bool) {
+	var event history.Event
+
+	var buy, sell []int
+	for _, per := range s.period {
+		if per == 0 || len(bars) < per {
+			continue
+		}
+
+		sma := bars[s.shift : s.shift+per].SMA(history.C)
+
+		if bars[s.shift].Open > sma && bars[s.shift].Low <= sma {
+			buy = append(buy, per)
+		}
+		if bars[s.shift].Open < sma && bars[s.shift].High >= sma {
+			sell = append(sell, per)
+		}
+	}
+
+	if len(buy) > 0 {
+		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = fmt.Sprintf("%v", buy)
+		event.Name = "SMA"
+		return event, true
+	}
+	if len(sell) > 0 {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = fmt.Sprintf("%v", sell)
+		event.Name = "SMA"
 		return event, true
 	}
 
@@ -213,7 +326,7 @@ type Engulf struct {
 	shift int
 }
 
-// Event FractalWick..
+// Event Engulf signal
 func (s *Engulf) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
@@ -221,8 +334,13 @@ func (s *Engulf) Event(bars history.Bars) (history.Event, bool) {
 		return event, false
 	}
 
-	if bars.IsEngulfBuy() {
+	if bars[s.shift:s.shift+2].IsEngulfBuy() && bars[s.shift].Bullish() {
 		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = "Engulf"
+		return event, true
+	}
+	if bars[s.shift:s.shift+2].IsEngulfSell() && bars[s.shift].Bearish() {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
 		event.Name = "Engulf"
 		return event, true
 	}
@@ -235,16 +353,21 @@ type Pin struct {
 	shift int
 }
 
-// Event FractalWick..
+// Event Pin signal
 func (s *Pin) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	if s.shift+3 > len(bars) {
+	if s.shift+4 > len(bars) {
 		return event, false
 	}
 
-	if bars[s.shift : s.shift+5].IsPinBuy() {
+	if bars[s.shift : s.shift+4].IsPinBuy() {
 		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.C))
+		event.Name = "Pinbar"
+		return event, true
+	}
+	if bars[s.shift : s.shift+4].IsPinSell() {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.C))
 		event.Name = "Pinbar"
 		return event, true
 	}
@@ -252,26 +375,85 @@ func (s *Pin) Event(bars history.Bars) (history.Event, bool) {
 	return event, false
 }
 
-// Dildo ..
-type Dildo struct {
+// TD ..
+type TD struct {
 	shift int
 }
 
-// Event ..
-func (s *Dildo) Event(bars history.Bars) (history.Event, bool) {
+// Event TD ..
+func (s *TD) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	if s.shift+22 > len(bars) {
+	if s.shift+30 > len(bars) {
 		return event, false
 	}
 
-	atr := bars[s.shift+2 : s.shift+22].ATR(history.HL)
+	td := bars[s.shift : s.shift+30].TD()
 
-	if bars[s.shift].Range() > atr*2.3 {
+	if td < 0 {
 		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
-		event.Name = "Dildo"
+		if td == -2 {
+			event.Name = "TDP!"
+		} else {
+			event.Name = "TD"
+		}
 		return event, true
 	}
+	if td > 0 {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		if td == 2 {
+			event.Name = "TDP!"
+		} else {
+			event.Name = "TD"
+		}
+		return event, true
+	}
+
+	return event, false
+}
+
+// Test ..
+type Test struct {
+	ema   []int
+	shift int
+}
+
+// Event Test ..
+func (s *Test) Event(bars history.Bars) (history.Event, bool) {
+	var event history.Event
+
+	pmax := int(math.Max(30, (math.Max(float64(s.ema[0]), math.Max(float64(s.ema[1]), float64(s.ema[2]))))))
+	if s.shift+pmax > len(bars) {
+		return event, false
+	}
+
+	td := bars[s.shift : s.shift+30].TD()
+
+	if td < 0 {
+		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = "TEST"
+		return event, true
+	}
+	if td > 0 {
+		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
+		event.Name = "TEST"
+		return event, true
+	}
+
+	// for _, per := range s.ema {
+	// 	ema := bars[s.shift : s.shift+per].EMA(history.C)
+
+	// 	if td < 0 && bars[s.shift].Close > ema && bars[s.shift].Low < ema {
+	// 		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
+	// 		event.Name = "TEST"
+	// 		return event, true
+	// 	}
+	// 	if td > 0 && bars[s.shift].Close < ema && bars[s.shift].High > ema {
+	// 		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
+	// 		event.Name = "TEST"
+	// 		return event, true
+	// 	}
+	// }
 
 	return event, false
 }

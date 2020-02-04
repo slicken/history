@@ -17,7 +17,7 @@ import (
 type Binance struct{}
 
 // Download new data from Binance exchange
-func (d Binance) Download(symbol, timeframe string, limit int) (history.Bars, error) {
+func (e Binance) Download(symbol, timeframe string, limit int) (history.Bars, error) {
 	path := fmt.Sprintf(
 		"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&limit=%v",
 		strings.ToUpper(symbol), strings.ToLower(timeframe), limit)
@@ -74,20 +74,6 @@ func Process(data *[]byte) (history.Bars, error) {
 	}
 
 	return list, nil
-}
-
-// SetPairs adds all symbols to exchange memory
-func (e *Binance) SetPairs() (m map[string]string) {
-
-	info, err := e.ExchangeInfo()
-	if err != nil {
-		return nil
-	}
-
-	for _, v := range info.Symbols {
-		m[v.Symbol] = ""
-	}
-	return nil
 }
 
 // ExchangeInfo holds the full exchange information type

@@ -45,11 +45,11 @@ const (
 // DefaultChart returns default chart settings
 func DefaultChart() *Chart {
 	return &Chart{
-		Type:      Candlestick,
-		EMA:       []int{21, 55, 89},
-		Volume:    true,
-		VolumeSMA: 7,
-		Shadow:    false,
+		Type: Candlestick,
+		//		EMA:    []int{21},
+		Volume: true,
+		//		VolumeSMA: 7,
+		Shadow: false,
 
 		SetWidth:  "56%",
 		SetHeight: "72%",
@@ -382,7 +382,7 @@ func (c *Chart) BuildCharts(data *history.Data, events history.Events) ([]byte, 
 		return buf, err
 	}
 
-	if len(events) == 0 {
+	if len(events) > 0 {
 
 		// build charts from events
 		for _, events := range events.Map() {

@@ -1,6 +1,7 @@
 package history
 
 import (
+	"encoding/json"
 	"math"
 	"sync"
 	"time"
@@ -15,6 +16,52 @@ type Bar struct {
 	Low    float64
 	Close  float64
 	Volume float64
+}
+
+// MarshalJSON implements json.Marshaler interface
+func (b *Bar) MarshalJSON() ([]byte, error) {
+	return json.Marshal(
+		&struct {
+			Time   time.Time `json:"time"`
+			Open   float64   `json:"open"`
+			High   float64   `json:"high"`
+			Low    float64   `json:"low"`
+			Close  float64   `json:"close"`
+			Volume float64   `json:"volume"`
+		}{
+			Time:   b.Time,
+			Open:   b.Open,
+			High:   b.High,
+			Low:    b.Low,
+			Close:  b.Close,
+			Volume: b.Volume,
+		},
+	)
+}
+
+// UnmarshalJSON implements json.Unmarshaler interface
+func (b *Bar) UnmarshalJSON(data []byte) error {
+	obj := struct {
+		Time   time.Time `json:"time"`
+		Open   float64   `json:"open"`
+		High   float64   `json:"high"`
+		Low    float64   `json:"low"`
+		Close  float64   `json:"close"`
+		Volume float64   `json:"volume"`
+	}{}
+
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+
+	b.Time = obj.Time
+	b.Open = obj.Open
+	b.High = obj.High
+	b.Low = obj.Low
+	b.Close = obj.Close
+	b.Volume = obj.Volume
+
+	return nil
 }
 
 // Price ..
@@ -59,35 +106,25 @@ const (
 	V
 )
 
-// // SetEvent ..
-// func (b *Bar) SetEvent(price float64, info string) {
-// 	b.event.price = price
-// 	b.event.info = info
-// }
-
-// // IsEvent ..
-// func (b *Bar) IsEvent() bool {
-// 	if b.event.price == 0 {
-// 		return false
-// 	}
-// 	return true
-// }
-
 // Timeframe ..
 type Timeframe int
 
 const (
+	m1  Timeframe = 1
 	m5  Timeframe = 5
 	m15 Timeframe = 15
 	h1  Timeframe = 60
 	h4  Timeframe = 240
+	h12 Timeframe = 960
 	d1  Timeframe = 1440
-	w1  Timeframe = 5760
+	w1  Timeframe = 10080
 )
 
 // Tf formats timeframe
 func Tf(tf string) Timeframe {
 	switch tf {
+	case "1m", "1M", "m1", "M1", "1":
+		return m1
 	case "5m", "5M", "m5", "M5", "5":
 		return m5
 	case "15m", "15M", "m15", "M15", "15":
@@ -96,6 +133,8 @@ func Tf(tf string) Timeframe {
 		return h1
 	case "4h", "4H", "h4", "H4", "240":
 		return h4
+	case "12h", "12H", "h12", "H12", "960":
+		return h12
 	case "1d", "1D", "d1", "D1", "d", "D", "1440":
 		return d1
 	case "1w", "1W", "w1", "W1", "w", "W":
@@ -108,6 +147,8 @@ func Tf(tf string) Timeframe {
 // Tfs formats timeframe
 func Tfs(tf Timeframe) string {
 	switch tf {
+	case m1:
+		return "1m"
 	case m5:
 		return "5m"
 	case m15:
@@ -116,6 +157,8 @@ func Tfs(tf Timeframe) string {
 		return "1h"
 	case h4:
 		return "4h"
+	case h12:
+		return "12h"
 	case d1:
 		return "1d"
 	case w1:
@@ -196,4 +239,14 @@ func (b Bar) Bull() bool {
 // Bear ..
 func (b Bar) Bear() bool {
 	return b.Open > b.Close
+}
+
+// Bullish that  closes upper 25%
+func (b Bar) Bullish() bool {
+	return b.Close > (b.High - b.Range()/4)
+}
+
+// Bearish that  closes bottom 25%
+func (b Bar) Bearish() bool {
+	return b.Close < (b.Low + b.Range()/4)
 }

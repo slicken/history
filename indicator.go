@@ -135,11 +135,13 @@ func (bars Bars) LowestIdx(mode PriceMode) int {
 // fmt.Println("lowest", bars.Lowest(o))
 // fmt.Println("lowestIdx", bars.LowestIdx(o))
 
+// ClearStates ..
 type ClearStates struct {
 	hh, ll, hl, lh, price float64
 	state                 int
 }
 
+// ClearState ..
 func (c *ClearStates) ClearState(bars Bars) int {
 
 	high := bars[0].High
@@ -174,53 +176,52 @@ func (c *ClearStates) ClearState(bars Bars) int {
 	return c.state
 }
 
-func (bars Bars) FractalHighIdx(per int) int {
-	for i, _ := range bars[:len(bars)-per] {
-		sh := i - per
-		r := (per * 2) + 1
-		if bars[sh:r].HighestIdx(H) == i {
-			return i
-		}
-	}
-	return -1
-}
+// // FractalHighIdx ..
+// func (bars Bars) FractalHighIdx(per int) int {
+// 	for i, _ := range bars[:len(bars)-per] {
+// 		sh := i - per
+// 		r := (per * 2) + 1
+// 		if bars[sh:r].HighestIdx(H) == i {
+// 			return i
+// 		}
+// 	}
+// 	return -1
+// }
 
-func (bars Bars) FractalLowIdx(per int) int {
-	for i, _ := range bars[:len(bars)-per] {
-		sh := i - per
-		r := (per * 2) + 1
-		if bars[sh:r].LowestIdx(L) == i {
-			return i
-		}
-	}
-	return -1
-}
+// // FractalLowIdx ..
+// func (bars Bars) FractalLowIdx(per int) int {
+// 	for i, _ := range bars[:len(bars)-per] {
+// 		sh := i - per
+// 		r := (per * 2) + 1
+// 		if bars[sh:r].LowestIdx(L) == i {
+// 			return i
+// 		}
+// 	}
+// 	return -1
+// }
 
+// IsPinBuy ...
 func (bars Bars) IsPinBuy() bool {
+	o0 := bars[0].Open
+	o2 := bars[2].Open
+	c0 := bars[0].Close
+	c2 := bars[2].Close
 
-	if bars[0].Bull() && bars[0].Low < bars[bars[1:4].LowestIdx(L)].BodyLow() && bars[0].BodyLow()-bars[0].Low > bars[0].Body()*2 {
+	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
+		c2 < o2 && c0 > o0 && c0 > bars[1].BodyLow()+bars[1].Body()*0.5 {
 		return true
 	}
-
-	// o0 := bars[0].Open
-	// o2 := bars[2].Open
-	// c0 := bars[0].Close
-	// c2 := bars[2].Close
-
-	// if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
-	// 	c2 < o2 && c0 > o0 && c0 > bars[1].BodyLow()+bars[1].Body()*0.5 {
-	// 	return true
-	// }
 	return false
 }
 
+// IsPinSell ...
 func (bars Bars) IsPinSell() bool {
 	o0 := bars[0].Open
 	o2 := bars[2].Open
 	c0 := bars[0].Close
 	c2 := bars[2].Close
 
-	if bars[1].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
+	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
 		c2 > o2 && c0 < o0 && c0 < bars[1].BodyHigh()-bars[1].Body()*0.5 {
 		return true
 	}
@@ -254,3 +255,170 @@ func (bars Bars) IsEngulfSell() bool {
 	}
 	return false
 }
+
+// TD Sequential 9
+func (bars Bars) TD() int {
+
+	//	uc=isUp==1?nz(uc[1])==0?1:uc[1]==1?2:uc[1]==2?3:uc[1]==3?4:uc[1]==4?5:uc[1]==5?6:uc[1]==6?7:uc[1]==7?8:uc[1]==8?9:0:0
+	//	dc=isDn==1?nz(dc[1])==0?1:dc[1]==1?2:dc[1]==2?3:dc[1]==3?4:dc[1]==4?5:dc[1]==5?6:dc[1]==6?7:dc[1]==7?8:dc[1]==8?9:0:0
+
+	var uc []int = make([]int, len(bars))
+	var dc []int = make([]int, len(bars))
+	for i := len(bars) - 5; i >= 0; i-- {
+
+		isUp := bars[i].Close > bars[i+4].Close
+		isDn := bars[i].Close < bars[i+4].Close
+
+		// UPCOUNT
+		if isUp {
+			dc[i] = 0
+			if uc[i+1] < 9 {
+				uc[i] = uc[i+1] + 1
+			} else {
+				uc[i] = 0
+			}
+
+			// PERFECT BUY
+			if uc[i] == 9 {
+				if bars[i+1].Low <= bars[i+3].Low || bars[i].Low <= bars[i+2].Low {
+					uc[i] = 10
+				}
+			} /* else if uc[i] != 0 && bars[i].Close >= bars[i+4].Close {
+				uc[i] = 0
+			}
+			*/
+		}
+
+		// DOWNCOUNT
+		if isDn {
+			uc[i] = 0
+			if dc[i+1] < 9 {
+				dc[i] = dc[i+1] + 1
+			} else {
+				dc[i] = 0
+			}
+
+			// PERFECT SELL
+			if dc[i] == 9 {
+				if bars[i+1].Low >= bars[i+3].Low || bars[i].Low >= bars[i+2].Low {
+					dc[i] = 10
+				}
+			} /* else if dc[i] != 0 && bars[i].Close <= bars[i+4].Close {
+				dc[i] = 0
+			}
+			*/
+		}
+
+		// debug: 	fmt.Printf("isUp\t%v \tuc\t%d \t\tisDn\t%v \t dc\t%d\t \n", isUp, uc[i], isDn, dc[i])
+	}
+	if uc[0] == 9 {
+		return 1
+	}
+	if uc[0] == 10 { // PERFECT SELL
+		return 2
+	}
+	if dc[0] == 9 {
+		return -1
+	}
+	if dc[0] == 10 { // PERFECT BUY
+		return -2
+	}
+
+	return 0
+}
+
+/*
+func (bars Bars) SEQ() int {
+
+	var bSetup, sSetup, bCountdown, sCountdown int
+	var bSetupInd, sSetupInd bool
+
+	for i := 100; i >= 0; i-- {
+
+		//+------------------------------------------------------------------+
+		//| Buy Setup                                                        |
+		//+------------------------------------------------------------------+
+
+		if bars[i].Close <= bars[i+4].Close && bars[i+1].Close >= bars[i+5].Close && bSetup == 0 {
+			bSetup++
+		}
+
+		if bars[i].Close < bars[i+4].Close && bSetup != 0 {
+			bSetup++
+
+			if bSetup == 9 {
+				bSetup = 0
+				bSetupInd = true
+				sSetupInd = false
+				sCountdown = 0
+			}
+		}
+
+		//if setup is completed look for criteria for perfect setup
+		if bSetupInd {
+			if bars[i+1].Low <= bars[i+3].Low || bars[i].Low <= bars[i+2].Low {
+				bSetupInd = false
+				//bPerfect = true
+				bCountdown = 1
+			}
+		} else if bars[i].Close >= bars[i+4].Close && bSetup != 0 {
+			bSetup = 0
+		}
+
+		//+------------------------------------------------------------------+
+		//| Buy Countdown Setup                                              |
+		//+------------------------------------------------------------------+
+
+		if bCountdown == 13 && bars[i].Close <= bars[i+1].Close {
+			bCountdown = 0
+		}
+
+		if bCountdown >= 1 && bCountdown < 13 && bars[i].Close <= bars[i+2].Close {
+			bCountdown++
+		}
+
+		//+------------------------------------------------------------------+
+		//| Sell Setup                                                       |
+		//+------------------------------------------------------------------+
+
+		if bars[i].Close >= bars[i+4].Close && bars[i+1].Close <= bars[i+5].Close && bSetup == 0 {
+			sSetup++
+		}
+
+		if bars[i].Close >= bars[i+4].Close && sSetup != 0 {
+			sSetup++
+			if sSetup == 9 {
+				sSetup = 0
+				sSetupInd = true
+				bSetupInd = false
+				bCountdown = 0
+			}
+		}
+
+		//Perfected Setup
+
+		if sSetupInd {
+			if bars[i+1].Low >= bars[i+3].Low || bars[i].Low >= bars[i+2].Low {
+				sSetupInd = false
+				//sPerfect = true
+				sCountdown = 1
+			}
+		} else if bars[i].Close <= bars[i+4].Close && sSetup != 0 {
+			sSetup = 0
+		}
+
+		//+------------------------------------------------------------------+
+		//| Sell Countdown Setup                                             |
+		//+------------------------------------------------------------------+
+
+		if sCountdown == 13 && bars[i].Close >= bars[i+2].Close {
+			sCountdown = 0
+		}
+
+		if sCountdown >= 1 && sCountdown < 13 && bars[i].Close >= bars[i+2].Close {
+			sCountdown++
+		}
+	}
+	return 0
+}
+*/
