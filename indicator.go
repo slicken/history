@@ -283,10 +283,7 @@ func (bars Bars) TD() int {
 				if bars[i+1].Low <= bars[i+3].Low || bars[i].Low <= bars[i+2].Low {
 					uc[i] = 10
 				}
-			} /* else if uc[i] != 0 && bars[i].Close >= bars[i+4].Close {
-				uc[i] = 0
 			}
-			*/
 		}
 
 		// DOWNCOUNT
@@ -303,10 +300,7 @@ func (bars Bars) TD() int {
 				if bars[i+1].Low >= bars[i+3].Low || bars[i].Low >= bars[i+2].Low {
 					dc[i] = 10
 				}
-			} /* else if dc[i] != 0 && bars[i].Close <= bars[i+4].Close {
-				dc[i] = 0
 			}
-			*/
 		}
 
 		// debug: 	fmt.Printf("isUp\t%v \tuc\t%d \t\tisDn\t%v \t dc\t%d\t \n", isUp, uc[i], isDn, dc[i])
@@ -326,99 +320,3 @@ func (bars Bars) TD() int {
 
 	return 0
 }
-
-/*
-func (bars Bars) SEQ() int {
-
-	var bSetup, sSetup, bCountdown, sCountdown int
-	var bSetupInd, sSetupInd bool
-
-	for i := 100; i >= 0; i-- {
-
-		//+------------------------------------------------------------------+
-		//| Buy Setup                                                        |
-		//+------------------------------------------------------------------+
-
-		if bars[i].Close <= bars[i+4].Close && bars[i+1].Close >= bars[i+5].Close && bSetup == 0 {
-			bSetup++
-		}
-
-		if bars[i].Close < bars[i+4].Close && bSetup != 0 {
-			bSetup++
-
-			if bSetup == 9 {
-				bSetup = 0
-				bSetupInd = true
-				sSetupInd = false
-				sCountdown = 0
-			}
-		}
-
-		//if setup is completed look for criteria for perfect setup
-		if bSetupInd {
-			if bars[i+1].Low <= bars[i+3].Low || bars[i].Low <= bars[i+2].Low {
-				bSetupInd = false
-				//bPerfect = true
-				bCountdown = 1
-			}
-		} else if bars[i].Close >= bars[i+4].Close && bSetup != 0 {
-			bSetup = 0
-		}
-
-		//+------------------------------------------------------------------+
-		//| Buy Countdown Setup                                              |
-		//+------------------------------------------------------------------+
-
-		if bCountdown == 13 && bars[i].Close <= bars[i+1].Close {
-			bCountdown = 0
-		}
-
-		if bCountdown >= 1 && bCountdown < 13 && bars[i].Close <= bars[i+2].Close {
-			bCountdown++
-		}
-
-		//+------------------------------------------------------------------+
-		//| Sell Setup                                                       |
-		//+------------------------------------------------------------------+
-
-		if bars[i].Close >= bars[i+4].Close && bars[i+1].Close <= bars[i+5].Close && bSetup == 0 {
-			sSetup++
-		}
-
-		if bars[i].Close >= bars[i+4].Close && sSetup != 0 {
-			sSetup++
-			if sSetup == 9 {
-				sSetup = 0
-				sSetupInd = true
-				bSetupInd = false
-				bCountdown = 0
-			}
-		}
-
-		//Perfected Setup
-
-		if sSetupInd {
-			if bars[i+1].Low >= bars[i+3].Low || bars[i].Low >= bars[i+2].Low {
-				sSetupInd = false
-				//sPerfect = true
-				sCountdown = 1
-			}
-		} else if bars[i].Close <= bars[i+4].Close && sSetup != 0 {
-			sSetup = 0
-		}
-
-		//+------------------------------------------------------------------+
-		//| Sell Countdown Setup                                             |
-		//+------------------------------------------------------------------+
-
-		if sCountdown == 13 && bars[i].Close >= bars[i+2].Close {
-			sCountdown = 0
-		}
-
-		if sCountdown >= 1 && sCountdown < 13 && bars[i].Close >= bars[i+2].Close {
-			sCountdown++
-		}
-	}
-	return 0
-}
-*/

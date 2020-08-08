@@ -248,7 +248,7 @@ func (data *Data) Subscribe(events *Events, strategies ...Strategy) {
 		n += fmt.Sprintf("%T ", strat)[6:]
 	}
 
-	log.Printf("Subscribed %q\n.", n)
+	log.Printf("Subscribed to %s\n", n)
 	go func() {
 		for {
 

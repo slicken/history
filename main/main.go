@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/slicken/history/charts"
@@ -61,7 +58,7 @@ func main() {
 	flag.BoolVar(&conf.Engulf, "engulf", false, "Engulf signals")
 	flag.BoolVar(&conf.Pin, "pin", false, "Pinbar signals")
 	flag.BoolVar(&conf.TD, "td", false, "TD Sequential 9")
-	flag.BoolVar(&conf.Test, "test", false, "Test event")
+	flag.BoolVar(&conf.Test, "test", false, "Test strategy")
 	// LIMITS
 	flag.IntVar(&conf.emax, "emax", 50, "maximum events to show on site")
 	flag.IntVar(&conf.limit, "limit", 210, "maximum bars to limit the history too")
@@ -106,6 +103,7 @@ func main() {
 	if err != nil {
 		log.Fatal("could not build symbols from exchange data:", err)
 	}
+
 	log.Println("initalizing...")
 	// LOAD SYMBOLS SETTINGS AND DOWNLOAD DATA
 
@@ -117,50 +115,6 @@ func main() {
 	// Subscribe to strategies
 	data.Subscribe(&events, strat...)
 
-	// APP LOOP ---------------------------------------------------------------------->
-
-	/*
-		go func() {
-			var snames string
-			for _, strat := range strat {
-				snames += fmt.Sprintf("%T ", strat)[6:]
-			}
-
-			log.Printf("Running strategies %s\n", snames)
-
-			for {
-
-				select {
-				case s, ok := <-data.C:
-					if !ok {
-						log.Println("Strategies stopped.")
-						return
-					}
-
-					symbol, timeframe := history.Split(s)
-					if symbol == "" || timeframe == "" {
-						continue
-					}
-					bars := data.Bars(symbol, timeframe)
-					if event, ok := bars.Events(strat...); ok && !events.Exist(event) {
-						event.Symbol = symbol
-						event.Timeframe = timeframe
-						events = append(events, event)
-
-						fmt.Printf("%s%s [%s] %s\n", symbol, timeframe, event.Type, event.Name)
-						// limit the events to maximum 50 events
-						num := len(events)
-						if num > conf.emax {
-							events = events[(num - conf.emax):]
-						}
-					}
-				default:
-					time.Sleep(time.Second)
-				}
-
-			}
-		}()
-	*/
 	// CHART SETTINGS
 	chart.Type = charts.ChartType(conf.ctype)
 	chart.Volume = conf.volume
@@ -184,58 +138,51 @@ func main() {
 		chart.SMA = append(chart.SMA, conf.sma3)
 	}
 
-	http.HandleFunc("/", httpScanEvents)
-	http.HandleFunc("/test", httpBacktestEvents)
+	// run strantegy on page load
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		// limit data
+		min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
+		start := time.Now().Add(-min)
+		datacut := data.TimeSpan(start, time.Now())
+
+		// build chart
+		c, err := chart.BuildCharts(datacut, events)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(c)
+
+	})
+	// run backtest on page load
+	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Backtesting %T\n", strat)
+
+		// limit data
+		min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
+		start := time.Now().Add(-min)
+		datacut := data.TimeSpan(start, time.Now())
+
+		// run strategy backtest on all data
+		ev, err := datacut.Test(strat[0], datacut.FirstTime(), datacut.LastTime())
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// build charts
+		c, err := chart.BuildCharts(datacut, ev)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(c)
+	})
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
-}
-
-func httpScanEvents(w http.ResponseWriter, r *http.Request) {
-
-	// limit data
-	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
-	start := time.Now().Add(-min)
-	datacut := data.TimeSpan(start, time.Now())
-
-	// build chart
-	c, err := chart.BuildCharts(datacut, events)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(c)
-}
-
-func httpBacktestEvents(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Backtesting %T\n", strat)
-
-	// limit data
-	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
-	start := time.Now().Add(-min)
-	datacut := data.TimeSpan(start, time.Now())
-
-	// run strategy backtest on all data
-	ev, err := datacut.Test(strat[0], datacut.FirstTime(), datacut.LastTime())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// build charts
-	c, err := chart.BuildCharts(datacut, ev)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(c)
-
-}
-
-// wait key
-func wait(v string) {
-	fmt.Printf("> Press 'Enter' to: %s\n", v)
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
 }
 
 // EMA ..
@@ -422,23 +369,10 @@ type Test struct {
 func (s *Test) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	pmax := int(math.Max(30, (math.Max(float64(s.ema[0]), math.Max(float64(s.ema[1]), float64(s.ema[2]))))))
-	if s.shift+pmax > len(bars) {
-		return event, false
-	}
-
-	td := bars[s.shift : s.shift+30].TD()
-
-	if td < 0 {
-		event.Buy(bars[s.shift].Time, bars[s.shift].Price(history.O))
-		event.Name = "TEST"
-		return event, true
-	}
-	if td > 0 {
-		event.Sell(bars[s.shift].Time, bars[s.shift].Price(history.O))
-		event.Name = "TEST"
-		return event, true
-	}
+	// pmax := int(math.Max(30, (math.Max(float64(s.ema[0]), math.Max(float64(s.ema[1]), float64(s.ema[2]))))))
+	// if s.shift+pmax > len(bars) {
+	// 	return event, false
+	// }
 
 	// for _, per := range s.ema {
 	// 	ema := bars[s.shift : s.shift+per].EMA(history.C)
