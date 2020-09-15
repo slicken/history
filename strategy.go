@@ -1,7 +1,6 @@
 package history
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -21,129 +20,101 @@ type MultiStrategy interface {
 	Event(*Data) (Event, bool)
 }
 
-// Events strategy Event on bars data
-func (bars Bars) Events(strategies ...Strategy) (Event, bool) {
-	var event Event
-	if len(bars) == 0 {
-		return event, false
-	}
+// // Events runs strategies on bars data
+// func (bars Bars) Events(strategies ...Strategy) (Event, bool) {
+// 	var event Event
+// 	if len(bars) == 0 {
+// 		return event, false
+// 	}
 
-	for _, strat := range strategies {
-		// strategy condition event
-		if new, ok := strat.Event(bars); ok {
+// 	for _, strat := range strategies {
+// 		// run strategy
+// 		if new, ok := strat.Event(bars); ok {
 
-			if event.Time.IsZero() {
-				event = new
-				continue
-			}
-			event.Name += " " + new.Name
-		}
-	}
+// 			if event.Time.IsZero() {
+// 				event = new
+// 				continue
+// 			}
+// 			// event.Name += " " + new.Name
+// 		}
+// 	}
+// 	return event, !event.Time.IsZero()
+// }
 
-	return event, !event.Time.IsZero()
-}
+// // Events strategys compatible with both Strategy (bars) and MultiStrategy (data)
+// func (data *Data) Events(strategies ...interface{}) (Events, error) {
+// 	events := make(Events, 0)
+// 	if len(data.History) == 0 {
+// 		return events, errNoHist
+// 	}
 
-// Events strategys compatible with both Strategy (bars) and MultiStrategy (data)
-func (data *Data) Events(strategies ...interface{}) (Events, error) {
-	events := make(Events, 0)
-	if len(data.History) == 0 {
-		return events, errNoHist
-	}
-	log.Printf("Scanning Events %T\n", strategies)
+// 	for _, strat := range strategies {
+// 		// MultiStrategy
+// 		if strat, ok := strat.(MultiStrategy); ok {
 
-	for _, strat := range strategies {
-		// MultiStrategy
-		if strat, ok := strat.(MultiStrategy); ok {
+// 			// strategy condition event
+// 			if event, ok := strat.Event(data); ok {
+// 				// add if new
+// 				if !event.Exists(events) {
+// 					events = append(events, event)
+// 				}
+// 			}
+// 		}
+// 		// Strategy
+// 		if strat, ok := strat.(Strategy); ok {
 
-			// strategy condition event
-			if event, ok := strat.Event(data); ok {
-				// add if new
-				if !events.Exist(event) {
-					events = append(events, event)
-				}
-			}
-		}
-		// Strategy
-		if strat, ok := strat.(Strategy); ok {
+// 			var wg sync.WaitGroup
+// 			for _, hist := range data.History {
 
-			var wg sync.WaitGroup
-			for _, hist := range data.History {
+// 				wg.Add(1)
+// 				go func(hist *History, rw *sync.RWMutex) {
+// 					defer wg.Done()
 
-				wg.Add(1)
-				go func(hist *History, rw *sync.RWMutex) {
-					defer wg.Done()
+// 					bars := data.Bars(hist.Symbol, hist.Timeframe)
 
-					bars := data.Bars(hist.Symbol, hist.Timeframe)
+// 					if event, ok := strat.Event(bars); ok {
 
-					if event, ok := strat.Event(bars); ok {
+// 						event.Symbol = hist.Symbol
+// 						event.Timeframe = hist.Timeframe
+// 						// add if new
+// 						if !event.Exists(events) {
+// 							rw.Lock()
+// 							events = append(events, event)
+// 							rw.Unlock()
+// 						}
+// 					}
+// 				}(hist, &data.RWMutex)
+// 			}
+// 			wg.Wait()
+// 		}
+// 	}
 
-						event.Symbol = hist.Symbol
-						event.Timeframe = hist.Timeframe
-						// add if new
-						if !events.Exist(event) {
-							rw.Lock()
-							events = append(events, event)
-							rw.Unlock()
-						}
-					}
-				}(hist, &data.RWMutex)
-			}
-			wg.Wait()
-		}
-	}
-
-	log.Printf("Scan complete! result %d Events\n", len(events))
-	return events, nil
-}
+// 	log.Printf("scan completed with %d Events\n", len(events))
+// 	return events, nil
+// }
 
 // Tester is strategy backtester interface
 type Tester interface {
 	Test(Strategy, time.Time, time.Time) (Events, error)
 }
 
-// Test strategies on bars data
-func (bars Bars) Test(strat Strategy, start, end time.Time) (Events, error) {
-	events := make(Events, 0)
-	if len(bars) == 0 {
-		return events, errors.New("no bars")
-	}
-	log.Printf("Test %T...\t %v --> %v\n", strat, start.Format(tformat), end.Format(tformat))
-
-	// stream the bars
-	for b := range bars.Stream(start, end, bars.Period()) {
-
-		if event, ok := strat.Event(b); ok {
-			// if new equals last, skip
-			if len(events) > 0 {
-				if events[len(events)-1].Time == event.Time {
-					continue
-				}
-			}
-			events = append(events, event)
-		}
-	}
-
-	log.Printf("Test complete! result %d Events\n", len(events))
-	return events, nil
-}
-
 // Test strategys compatible with both Strategy (bars) and MultiStrategy
 func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) {
 	events := make(Events, 0)
 	if len(data.History) == 0 {
-		return events, errors.New("no histories")
+		return events, errNoHist
 	}
-	log.Printf("Test %T...\t %v --> %v\n", strat, start.Format(tformat), end.Format(tformat))
+	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(tformat), end.Format(tformat))
 
 	// MultiStrategy
 	if strat, ok := strat.(MultiStrategy); ok {
 		// stream data
-		for d := range data.Stream(start, end, data.Period()) {
+		for d := range data.Stream(start, end, data.MinPeriod()) {
 
 			if event, ok := strat.Event(d); ok {
 
 				// add if new
-				if !events.Exist(event) {
+				if !event.Exists(events) {
 					events = append(events, event)
 				}
 			}
@@ -163,11 +134,11 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 				for b := range bars.Stream(start, end, bars.Period()) {
 
 					if event, ok := strat.Event(b); ok {
-
 						event.Symbol = hist.Symbol
 						event.Timeframe = hist.Timeframe
+
 						// add if new
-						if !events.Exist(event) {
+						if !event.Exists(events) {
 							rw.Lock()
 							events = append(events, event)
 							rw.Unlock()
@@ -179,46 +150,57 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 		wg.Wait()
 	}
 
-	log.Printf("Test complete! result %d Events\n", len(events))
+	log.Printf("TEST completed with %d Events\n", len(events))
 	return events, nil
 }
 
 // Event will hold event data for specific time and price
 type Event struct {
+	Symbol, Timeframe string
+	Type, Text        string
 	Time              time.Time
 	Price             float64
-	Symbol, Timeframe string
-	Type, Name        string
 }
 
-// Events type
-type Events []Event
+// Add ..
+func (e *Event) Add(typ, text string, time time.Time, price float64) {
+	e.Type = typ
+	e.Text = text
+	e.Time = time
+	e.Price = price
+	//	e.Name = fmt.Sprintf("buy %.8f", price)
+}
 
-// Exist checks if event exists
-func (ev Events) Exist(new Event) bool {
-	for _, old := range ev {
-		if new.Symbol == old.Symbol && new.Timeframe == old.Timeframe && new.Time == old.Time {
+// Exists ..
+func (e *Event) Exists(events Events) bool {
+	for _, old := range events {
+		if e.Time == old.Time && e.Price == old.Price {
 			return true
 		}
 	}
+
 	return false
 }
 
-// Buy event
-func (e *Event) Buy(time time.Time, price float64) {
-	e.Time = time
-	e.Price = price
-	e.Type = "B"
-	e.Name = fmt.Sprintf("buy %.8f", price)
-}
+// // WithinBars ..
+// func (e *Event) WithinBars(events Events, limit int) bool {
 
-// Sell event
-func (e *Event) Sell(time time.Time, price float64) {
-	e.Time = time
-	e.Price = price
-	e.Type = "S"
-	e.Name = fmt.Sprintf("sell %f", price)
-}
+// 	for _, o := range events {
+// 		if e.Symbol == o.Symbol && e.Timeframe == o.Timeframe {
+// 			tf := time.Duration(Tf(o.Timeframe)) * time.Minute
+// 			diff := o.Time.Sub(e.Time)
+// 			bbw := -int(diff / tf)
+// 			if limit > bbw {
+// 				return true
+// 			}
+// 		}
+// 	}
+
+// 	return false
+// }
+
+// Events type
+type Events []Event
 
 // Map events
 func (ev Events) Map() map[string]Events {
@@ -237,42 +219,4 @@ func (ev Events) Map() map[string]Events {
 		m[key] = append(m[key], e)
 	}
 	return m
-}
-
-// Subscribe Strategies that runs everytime
-// updater channel (data.C) gets updated.
-func (data *Data) Subscribe(events *Events, strategies ...Strategy) {
-
-	var n string
-	for _, strat := range strategies {
-		n += fmt.Sprintf("%T ", strat)[6:]
-	}
-
-	log.Printf("Subscribed to %s\n", n)
-	go func() {
-		for {
-
-			select {
-			case s, ok := <-data.C:
-				if !ok {
-					log.Println("Subscriber stopped.")
-				}
-
-				symbol, timeframe := Split(s)
-				if symbol == "" || timeframe == "" {
-					continue
-				}
-				bars := data.Bars(symbol, timeframe)
-				if event, ok := bars.Events(strategies...); ok && !events.Exist(event) {
-					event.Symbol = symbol
-					event.Timeframe = timeframe
-					*events = append(*events, event)
-
-					fmt.Printf("%s%s [%s] %s\n", symbol, timeframe, event.Type, event.Name)
-				}
-			default:
-				time.Sleep(time.Second)
-			}
-		}
-	}()
 }

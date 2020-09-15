@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/slicken/history"
 )
@@ -65,8 +66,6 @@ func DefaultChart() *Chart {
 
 // MakeOHLC creates bars for charts
 func MakeOHLC(bars history.Bars) ([]byte, error) {
-	// item.Price, _ = strconv.ParseFloat(v[0].(string), 64)
-	// item.Amount, _ = strconv.ParseFloat(v[1].(string), 64)
 	var data []interface{}
 
 	for i := len(bars) - 1; i >= 0; i-- {
@@ -88,21 +87,21 @@ func MakeVolume(bars history.Bars) ([]byte, error) {
 }
 
 // MakeFlags creates bars for charts
-func MakeFlags(events history.Events) ([]string, []string, error) {
+func MakeFlags(events history.Events) ([]string, []string) {
 	var buy, sell = make([]string, 0), make([]string, 0)
 
 	for _, event := range events {
-		if event.Type == "B" {
-			s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, event.Type, event.Name)
+		if strings.HasPrefix(event.Type, "b") || strings.HasPrefix(event.Type, "B") {
+			s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, "B", event.Text)
 			buy = append(buy, s)
 		}
-		if event.Type == "S" {
-			s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, event.Type, event.Name)
+		if strings.HasPrefix(event.Type, "s") || strings.HasPrefix(event.Type, "S") {
+			s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, "S", event.Text)
 			sell = append(sell, s)
 		}
 	}
 
-	return buy, sell, nil
+	return buy, sell
 }
 
 // MakeHeader creates chart headers
@@ -257,13 +256,13 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
             type: '` + string(c.Type) + `',
 			name: '` + name + `',
 			id: '` + name + `',
-			zIndex: 3,
+			zIndex: 4,
 			data: ` + fmt.Sprintf("%s", ohlc) + `,
 			shadow: ` + fmt.Sprintf("%v", c.Shadow) + `,` +
 
 		func() (s string) {
 			// flags data
-			flagB, flagS, _ := MakeFlags(events)
+			flagB, flagS := MakeFlags(events)
 
 			// B flag
 			if len(flagB) > 0 {
@@ -271,7 +270,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 				}, {
 					type: 'flags',
 					data: ` + fmt.Sprintf("%s", flagB) + `,
-					zIndex: 4,
+					zIndex: 3,
 					onSeries: '` + name + `',
 					shape: 'circlepin',
 					color: 'green',
@@ -286,7 +285,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 				}, {
 					type: 'flags',
 					data: ` + fmt.Sprintf("%s", flagS) + `,
-					//zIndex: 4,
+					zIndex: 3,
 					onSeries: '` + name + `',
 					shape: 'circlepin',
 					color: '#f45b5b',
@@ -374,35 +373,16 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 */
 
 // BuildCharts ..
-func (c *Chart) BuildCharts(data *history.Data, events history.Events) ([]byte, error) {
+func (c *Chart) BuildCharts(data *history.Data) (buf []byte, err error) {
 
-	// build page header
-	buf, err := c.MakeHeader()
-	if err != nil {
-		return buf, err
-	}
-
-	if len(events) > 0 {
-
-		// build charts from events
-		for _, events := range events.Map() {
-			if len(events) == 0 {
-				continue
-			}
-
-			symbol := events[0].Symbol
-			timeframe := events[0].Timeframe
-			chart, err := c.MakeChart(symbol+timeframe, data.Bars(symbol, timeframe), events)
-			if err != nil {
-				log.Println(err)
-			}
-
-			// append to slice
-			buf = append(buf, chart...)
+	if len(data.History) > 0 {
+		// build page header
+		buf, err = c.MakeHeader()
+		if err != nil {
+			return nil, err
 		}
-	} else {
 
-		// build charts for all
+		// build charts for all history
 		for _, hist := range data.History {
 			symbol := hist.Symbol
 			timeframe := hist.Timeframe
@@ -415,8 +395,42 @@ func (c *Chart) BuildCharts(data *history.Data, events history.Events) ([]byte, 
 			// append to slice
 			buf = append(buf, chart...)
 		}
+	} else {
+		buf = append(buf, []byte(`no charts history`)...)
 	}
 
-	// return template.New("charts").Parse(temp)
-	return buf, nil
+	return buf, err
+}
+
+// BuildChartEvents ..
+func (c *Chart) BuildChartEvents(data *history.Data, events history.Events) (buf []byte, err error) {
+
+	if len(events) > 0 {
+		// build page header
+		buf, err = c.MakeHeader()
+		if err != nil {
+			return nil, err
+		}
+
+		// build charts where there is events
+		for _, evt := range events.Map() {
+			if len(events) == 0 {
+				continue
+			}
+
+			symbol := evt[0].Symbol
+			timeframe := evt[0].Timeframe
+
+			chart, err := c.MakeChart(symbol+timeframe, data.Bars(symbol, timeframe), evt)
+			if err != nil {
+				log.Println(err)
+			}
+
+			// append to slice
+			buf = append(buf, chart...)
+		}
+	} else {
+		buf = append(buf, []byte(`no events found`)...)
+	}
+	return buf, err
 }

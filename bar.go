@@ -9,7 +9,6 @@ import (
 
 // Bar ..
 type Bar struct {
-	// event
 	Time   time.Time
 	Open   float64
 	High   float64
@@ -18,7 +17,7 @@ type Bar struct {
 	Volume float64
 }
 
-// MarshalJSON implements json.Marshaler interface
+// MarshalJSON compatible with json.Marshaler interface
 func (b *Bar) MarshalJSON() ([]byte, error) {
 	return json.Marshal(
 		&struct {
@@ -39,7 +38,7 @@ func (b *Bar) MarshalJSON() ([]byte, error) {
 	)
 }
 
-// UnmarshalJSON implements json.Unmarshaler interface
+// UnmarshalJSON compatible with json.Unmarshaler interface
 func (b *Bar) UnmarshalJSON(data []byte) error {
 	obj := struct {
 		Time   time.Time `json:"time"`
@@ -211,6 +210,36 @@ func merge(bars ...*Bars) *Bars {
 	return &merged
 }
 
+// T ..
+func (b Bar) T() time.Time {
+	return b.Time
+}
+
+// O ..
+func (b Bar) O() float64 {
+	return b.Open
+}
+
+// H ..
+func (b Bar) H() float64 {
+	return b.High
+}
+
+// L ..
+func (b Bar) L() float64 {
+	return b.Low
+}
+
+// C ..
+func (b Bar) C() float64 {
+	return b.Close
+}
+
+// V ..
+func (b Bar) V() float64 {
+	return b.Volume
+}
+
 // Range ..
 func (b Bar) Range() float64 {
 	return b.High - b.Low
@@ -243,10 +272,25 @@ func (b Bar) Bear() bool {
 
 // Bullish that  closes upper 25%
 func (b Bar) Bullish() bool {
-	return b.Close > (b.High - b.Range()/4)
+	return b.Close > (b.High - b.Range()/5)
 }
 
 // Bearish that  closes bottom 25%
 func (b Bar) Bearish() bool {
-	return b.Close < (b.Low + b.Range()/4)
+	return b.Close < (b.Low + b.Range()/5)
+}
+
+// WickUp ..
+func (b Bar) WickUp() float64 {
+	return b.High - b.BodyHigh()
+}
+
+// WickDn ..
+func (b Bar) WickDn() float64 {
+	return b.BodyLow() - b.Low
+}
+
+// PercMove ..
+func (b Bar) PercMove() float64 {
+	return 100 * ((b.Close - b.Open) / b.Open)
 }

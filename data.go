@@ -24,13 +24,14 @@ type Data struct {
 	Downloader
 }
 
-// Downloader interface to plug diffrent data providers
+// Downloader interface plugs functions that download bars
 type Downloader interface {
-	// Download downloads and returns bars
+	// Download and returns the bars in right format
+	// Bars = []Bar { Time time.Time, Open,High,Low,Volume float64 }
 	Download(symbol, timeframe string, limit int) (Bars, error)
 }
 
-// List returns string slice of loaded historys
+// List returns string slice (BTCUSDT4h) of loaded historys
 func (d *Data) List() []string {
 	var list []string
 
@@ -85,38 +86,8 @@ func (d *Data) TimeSpan(start, end time.Time) *Data {
 	return d
 }
 
-// // TimeSpan returns all histories for given times
-// func (d *Data) TimeSpan(start, end time.Time) *Data {
-// 	// make new data so we dont cut the methods data
-// 	data := new(Data)
-// 	data.Downloader = d.Downloader
-// 	data.update = d.update
-// 	data.C = d.C
-
-// 	var wg sync.WaitGroup
-
-// 	for _, h := range d.History {
-
-// 		wg.Add(1)
-// 		go func(h *History, wg *sync.WaitGroup) {
-// 			defer wg.Done()
-
-// 			hist := new(History)
-// 			hist.Symbol = h.Symbol
-// 			hist.Timeframe = h.Timeframe
-// 			hist.Bars = h.Bars.TimeSpan(start, end)
-// 			data.Lock()
-// 			data.History = append(data.History, hist)
-// 			data.Unlock()
-// 		}(h, &wg)
-// 	}
-
-// 	wg.Wait()
-// 	return data
-// }
-
-// Period returns minimum period of historys
-func (d *Data) Period() time.Duration {
+// MinPeriod returns minimum period of historys
+func (d *Data) MinPeriod() time.Duration {
 	var min = minDur
 
 	d.RLock()
@@ -335,12 +306,12 @@ func (d *Data) updateHistory(h *History, limit int) {
 			continue
 		}
 		// success. update history
-		log.Printf("%s%s downloaded %d bar(s)\n", h.Symbol, h.Timeframe, len(bars))
+		log.Printf("%s%s downloaded %d bars\n", h.Symbol, h.Timeframe, len(bars))
 		d.Add(h.Symbol, h.Timeframe, &bars)
 		return
 	}
 
 	// failed. penatly time added
-	log.Printf("failed to download %d bar(s) for %s%s: %v\n", limit, h.Symbol, h.Timeframe, err)
+	log.Printf("failed to download %d bars for %s%s: %v\n", limit, h.Symbol, h.Timeframe, err)
 	h.lastUpdate = time.Now().Add(10 * time.Minute)
 }

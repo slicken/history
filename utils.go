@@ -17,7 +17,7 @@ const (
 	maxtries      = 3
 )
 
-// ReadBars loads saved bars from file
+// ReadBars loads ars from file
 func ReadBars(symbol, timeframe string) (Bars, error) {
 	var bars Bars
 	filename := fn(symbol, timeframe)
@@ -35,7 +35,7 @@ func ReadBars(symbol, timeframe string) (Bars, error) {
 	return bars, nil
 }
 
-// SaveBars saves bars data file
+// SaveBars saves bars to file
 func SaveBars(symbol, timeframe string, bars *Bars) error {
 	// merge if file alredy exist
 	if old, err := ReadBars(symbol, timeframe); err == nil {
@@ -65,12 +65,12 @@ func SaveBars(symbol, timeframe string, bars *Bars) error {
 	return ioutil.WriteFile(filepath, b, 0644)
 }
 
-// fn keeps data filename structure
+// fn makes filename layout
 func fn(symbol, timeframe string) string {
 	return strings.ToUpper(symbol) + fileseparator + strings.ToLower(timeframe) + ".json"
 }
 
-// calculates how many bars between now and last
+// calculates how many bars between time.now and time.last
 func calcLimit(last time.Time, timeframe string) int {
 	dur := time.Duration(Tf(timeframe)) * time.Minute
 	diff := time.Until(last)
@@ -78,7 +78,7 @@ func calcLimit(last time.Time, timeframe string) int {
 	return -int(diff / dur)
 }
 
-// Split returns the symbol and timeframe from string
+// Split returns the symbol and timeframe from a SymbolTimeframe string
 func Split(s string) (string, string) {
 	if len(s) < 3 {
 		return "", ""

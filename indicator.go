@@ -200,33 +200,33 @@ func (c *ClearStates) ClearState(bars Bars) int {
 // 	return -1
 // }
 
-// IsPinBuy ...
-func (bars Bars) IsPinBuy() bool {
-	o0 := bars[0].Open
-	o2 := bars[2].Open
-	c0 := bars[0].Close
-	c2 := bars[2].Close
+// // IsPinBuy ...
+// func (bars Bars) IsPinBuy() bool {
+// 	o0 := bars[0].Open
+// 	o2 := bars[2].Open
+// 	c0 := bars[0].Close
+// 	c2 := bars[2].Close
 
-	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
-		c2 < o2 && c0 > o0 && c0 > bars[1].BodyLow()+bars[1].Body()*0.5 {
-		return true
-	}
-	return false
-}
+// 	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
+// 		c2 < o2 && c0 > o0 && c0 > bars[1].BodyLow()+bars[1].Body()*0.5 {
+// 		return true
+// 	}
+// 	return false
+// }
 
-// IsPinSell ...
-func (bars Bars) IsPinSell() bool {
-	o0 := bars[0].Open
-	o2 := bars[2].Open
-	c0 := bars[0].Close
-	c2 := bars[2].Close
+// // IsPinSell ...
+// func (bars Bars) IsPinSell() bool {
+// 	o0 := bars[0].Open
+// 	o2 := bars[2].Open
+// 	c0 := bars[0].Close
+// 	c2 := bars[2].Close
 
-	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
-		c2 > o2 && c0 < o0 && c0 < bars[1].BodyHigh()-bars[1].Body()*0.5 {
-		return true
-	}
-	return false
-}
+// 	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
+// 		c2 > o2 && c0 < o0 && c0 < bars[1].BodyHigh()-bars[1].Body()*0.5 {
+// 		return true
+// 	}
+// 	return false
+// }
 
 // IsEngulfBuy ..
 func (bars Bars) IsEngulfBuy() bool {
