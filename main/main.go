@@ -87,7 +87,6 @@ func main() {
 
 	// add strategy to event listener
 	evl.Add(strat)
-	evl.List()
 	// start event listener
 	evl.Start(data, events)
 
