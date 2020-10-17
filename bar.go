@@ -1,7 +1,6 @@
 package history
 
 import (
-	"encoding/json"
 	"math"
 	"sync"
 	"time"
@@ -17,51 +16,51 @@ type Bar struct {
 	Volume float64
 }
 
-// MarshalJSON compatible with json.Marshaler interface
-func (b *Bar) MarshalJSON() ([]byte, error) {
-	return json.Marshal(
-		&struct {
-			Time   time.Time `json:"time"`
-			Open   float64   `json:"open"`
-			High   float64   `json:"high"`
-			Low    float64   `json:"low"`
-			Close  float64   `json:"close"`
-			Volume float64   `json:"volume"`
-		}{
-			Time:   b.Time,
-			Open:   b.Open,
-			High:   b.High,
-			Low:    b.Low,
-			Close:  b.Close,
-			Volume: b.Volume,
-		},
-	)
-}
+// // MarshalJSON compatible with json.Marshaler interface
+// func (b *Bar) MarshalJSON() ([]byte, error) {
+// 	return json.Marshal(
+// 		&struct {
+// 			Time   time.Time `json:"time"`
+// 			Open   float64   `json:"open"`
+// 			High   float64   `json:"high"`
+// 			Low    float64   `json:"low"`
+// 			Close  float64   `json:"close"`
+// 			Volume float64   `json:"volume"`
+// 		}{
+// 			Time:   b.Time,
+// 			Open:   b.Open,
+// 			High:   b.High,
+// 			Low:    b.Low,
+// 			Close:  b.Close,
+// 			Volume: b.Volume,
+// 		},
+// 	)
+// }
 
-// UnmarshalJSON compatible with json.Unmarshaler interface
-func (b *Bar) UnmarshalJSON(data []byte) error {
-	obj := struct {
-		Time   time.Time `json:"time"`
-		Open   float64   `json:"open"`
-		High   float64   `json:"high"`
-		Low    float64   `json:"low"`
-		Close  float64   `json:"close"`
-		Volume float64   `json:"volume"`
-	}{}
+// // UnmarshalJSON compatible with json.Unmarshaler interface
+// func (b *Bar) UnmarshalJSON(data []byte) error {
+// 	obj := struct {
+// 		Time   time.Time `json:"time"`
+// 		Open   float64   `json:"open"`
+// 		High   float64   `json:"high"`
+// 		Low    float64   `json:"low"`
+// 		Close  float64   `json:"close"`
+// 		Volume float64   `json:"volume"`
+// 	}{}
 
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return err
-	}
+// 	if err := json.Unmarshal(data, &obj); err != nil {
+// 		return err
+// 	}
 
-	b.Time = obj.Time
-	b.Open = obj.Open
-	b.High = obj.High
-	b.Low = obj.Low
-	b.Close = obj.Close
-	b.Volume = obj.Volume
+// 	b.Time = obj.Time
+// 	b.Open = obj.Open
+// 	b.High = obj.High
+// 	b.Low = obj.Low
+// 	b.Close = obj.Close
+// 	b.Volume = obj.Volume
 
-	return nil
-}
+// 	return nil
+// }
 
 // Price ..
 func (b Bar) Price(mode PriceMode) float64 {

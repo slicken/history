@@ -10,8 +10,8 @@ import (
 	"github.com/slicken/history"
 )
 
-// Maxlimit on chart data arrays
-const Maxlimit = 10000
+// MAXLIMIT on chart data arrays
+const MAXLIMIT = 10000
 
 // Chart holds chart settings
 type Chart struct {

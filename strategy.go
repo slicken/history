@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const tformat = "2006/01/02 15:04"
+const TFORMAT = "2006/01/02 15:04"
 
 // Strategy interface using Bars type as Event condition
 type Strategy interface {
@@ -104,7 +104,7 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 	if len(data.History) == 0 {
 		return events, errNoHist
 	}
-	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(tformat), end.Format(tformat))
+	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(TFORMAT), end.Format(TFORMAT))
 
 	// MultiStrategy
 	if strat, ok := strat.(MultiStrategy); ok {

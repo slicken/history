@@ -26,9 +26,7 @@ type Data struct {
 
 // Downloader interface plugs functions that download bars
 type Downloader interface {
-	// Download and returns the bars in right format
-	// Bars = []Bar { Time time.Time, Open,High,Low,Volume float64 }
-	Download(symbol, timeframe string, limit int) (Bars, error)
+	GetKlines(symbol, timeframe string, limit int) (Bars, error)
 }
 
 // List returns string slice (BTCUSDT4h) of loaded historys
@@ -88,13 +86,13 @@ func (d *Data) TimeSpan(start, end time.Time) *Data {
 
 // MinPeriod returns minimum period of historys
 func (d *Data) MinPeriod() time.Duration {
-	var min = minDur
+	var min = MINDUR
 
 	d.RLock()
 	defer d.RUnlock()
 	for _, hist := range d.History {
 		period := hist.Bars.Period()
-		if min == minDur || period < min {
+		if min == MINDUR || period < min {
 			min = period
 		}
 	}
@@ -150,11 +148,11 @@ func (d *Data) LastTime() time.Time {
 	return last
 }
 
-// Delete adds new history saftly
+// Delete removes a history from data struct gracefully
 func (d *Data) Delete(symbol, timeframe string) error {
-
 	d.Lock()
 	defer d.Unlock()
+
 	for i, hist := range d.History {
 		if hist.Symbol == symbol && hist.Timeframe == timeframe {
 			// d.History = append(d.History[:i], d.History[:i+1]...)
@@ -170,12 +168,12 @@ func (d *Data) Delete(symbol, timeframe string) error {
 
 // Load loads symbols from slice defined with symboltf strings
 func (d *Data) Load(symbols []string) error {
-
 	var wg sync.WaitGroup
+
 	for _, s := range symbols {
-		if s == "" { //						---------------- fix so we can remove this --------------
-			continue
-		}
+		// if s == "" { //						---------------- fix so we can remove this --------------
+		// 	continue
+		// }
 		symbol, timeframe := Split(s)
 		if symbol == "" || timeframe == "" {
 			log.Printf("could not load %s. invalid input\n", symbol+timeframe)
@@ -185,6 +183,7 @@ func (d *Data) Load(symbols []string) error {
 		go func(symbol, timeframe string, wg *sync.WaitGroup) { // is this working properly ?
 			defer wg.Done()
 
+			// we dont check for errors, cause we use add ether way
 			bars, _ := ReadBars(symbol, timeframe)
 			d.Add(symbol, timeframe, &bars)
 		}(symbol, timeframe, &wg)
@@ -194,7 +193,7 @@ func (d *Data) Load(symbols []string) error {
 	return nil
 }
 
-// Add adds new history safely
+// Add new history safely to datastruct
 func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 
 	// create or get history
@@ -241,7 +240,7 @@ func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 
 		log.Printf("%s%s %s\n", hist.Symbol, hist.Timeframe, update)
 
-		// notify data updates channel
+		// notify datastruct that we have updateed x
 		select {
 		case d.C <- (symbol + timeframe):
 		default:
@@ -270,16 +269,16 @@ func (d *Data) Update(enabled bool) {
 			d.RLock()
 			for _, hist := range d.History {
 
-				limit := maxlimit
+				limit := MAXLIMIT
 				if len(hist.Bars) != 0 {
+					// check how many new bars there is from last bars time
 					limit = calcLimit(hist.Bars[0].Time, hist.Timeframe)
 				}
 
-				if limit == 0 {
-					continue
+				if limit != 0 {
+					go d.updateHistory(hist, limit)
 				}
 
-				go d.updateHistory(hist, limit)
 			}
 			d.RUnlock()
 
@@ -297,8 +296,8 @@ func (d *Data) updateHistory(h *History, limit int) {
 	var err error
 	tries := 0
 
-	for tries < maxtries {
-		bars, err := d.Download(h.Symbol, h.Timeframe, limit)
+	for tries < MAXTRIES {
+		bars, err := d.GetKlines(h.Symbol, h.Timeframe, limit)
 		if err != nil {
 			// try again
 			tries++

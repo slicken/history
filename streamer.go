@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// --- add streamer delay ---------------------- not done -------------------------
+// --- add streamer delays ---------------------- not done -------------------------
 
 // Streamer streams data, historys or bars
 type Streamer interface {
@@ -52,11 +52,11 @@ func (bars Bars) Stream(start, end time.Time, interval time.Duration) <-chan Bar
 		}
 	}
 	// adjust interval if needed
-	if interval < minDur {
-		interval = minDur
+	if interval < MINDUR {
+		interval = MINDUR
 	}
-	if interval > maxDur {
-		interval = maxDur
+	if interval > MAXDUR {
+		interval = MAXDUR
 	}
 
 	go func() {
@@ -93,11 +93,11 @@ func (data *Data) Stream(start, end time.Time, interval time.Duration) <-chan *D
 		}
 	}
 	// adjust interval if needed
-	if interval < minDur {
-		interval = minDur
+	if interval < MINDUR {
+		interval = MINDUR
 	}
-	if interval > maxDur {
-		interval = maxDur
+	if interval > MAXDUR {
+		interval = MAXDUR
 	}
 
 	go func() {

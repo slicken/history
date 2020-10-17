@@ -27,17 +27,18 @@ func (bars Bars) Sort() Bars {
 	return bars
 }
 
-// minDur is minumum duration for periods
-const minDur = time.Duration(1 * time.Minute)
-
-// maxDur is maximum duration for periods
-const maxDur = time.Duration(43829 * time.Minute)
+const (
+	// MINDUR is minumum duration for periods
+	MINDUR = time.Duration(1 * time.Minute)
+	// MAXDUR is maximum duration for periods
+	MAXDUR = time.Duration(43829 * time.Minute)
+)
 
 // Period returns the calculated timeframe interval,
 // need at least 2 bars or it will return 1 minute as default
 func (bars Bars) Period() time.Duration {
 	if len(bars) < 2 {
-		return minDur
+		return MINDUR
 	}
 
 	return bars[0].Time.Sub(bars[1].Time)

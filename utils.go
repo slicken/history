@@ -11,17 +11,17 @@ import (
 )
 
 const (
-	datadir       = "data"
-	fileseparator = "_"
-	maxlimit      = 1000
-	maxtries      = 3
+	DATADIR       = "data"
+	FILESEPARATOR = "_"
+	MAXLIMIT      = 1000
+	MAXTRIES      = 3
 )
 
 // ReadBars loads ars from file
 func ReadBars(symbol, timeframe string) (Bars, error) {
 	var bars Bars
 	filename := fn(symbol, timeframe)
-	filepath := filepath.Join(datadir, filename)
+	filepath := filepath.Join(DATADIR, filename)
 
 	b, err := ioutil.ReadFile(filepath)
 	if err != nil {
@@ -52,22 +52,22 @@ func SaveBars(symbol, timeframe string, bars *Bars) error {
 		return err
 	}
 
-	// create datadir if not exist
-	if _, err := os.Stat(datadir); err != nil {
-		if err := os.MkdirAll(datadir, os.ModePerm); err != nil {
+	// create DATADIR if not exist
+	if _, err := os.Stat(DATADIR); err != nil {
+		if err := os.MkdirAll(DATADIR, os.ModePerm); err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	filename := fn(symbol, timeframe)
-	filepath := filepath.Join(datadir, filename)
+	filepath := filepath.Join(DATADIR, filename)
 
 	return ioutil.WriteFile(filepath, b, 0644)
 }
 
 // fn makes filename layout
 func fn(symbol, timeframe string) string {
-	return strings.ToUpper(symbol) + fileseparator + strings.ToLower(timeframe) + ".json"
+	return strings.ToUpper(symbol) + FILESEPARATOR + strings.ToLower(timeframe) + ".json"
 }
 
 // calculates how many bars between time.now and time.last
