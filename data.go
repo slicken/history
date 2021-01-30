@@ -2,6 +2,7 @@ package history
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ var (
 type Data struct {
 	History []*History
 	update  bool
-	// C notify channel when a history has been updated
+	// C notify channel when we got now bars for a history (symbol timeframe)
 	C chan string
 	sync.RWMutex
 
@@ -185,7 +186,8 @@ func (d *Data) Load(symbols []string) error {
 
 			// we dont check for errors, cause we use add ether way
 			bars, _ := ReadBars(symbol, timeframe)
-			d.Add(symbol, timeframe, &bars)
+
+			d.Add(symbol, timeframe, &bars, 0)
 		}(symbol, timeframe, &wg)
 	}
 
@@ -194,7 +196,7 @@ func (d *Data) Load(symbols []string) error {
 }
 
 // Add new history safely to datastruct
-func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
+func (d *Data) Add(symbol, timeframe string, bars *Bars, n int) error {
 
 	// create or get history
 	hist, err := d.history(symbol, timeframe)
@@ -221,7 +223,7 @@ func (d *Data) Add(symbol, timeframe string, bars *Bars) error {
 
 	// add or merge bars
 	if len(*bars) != 0 {
-		update := "updated"
+		update := fmt.Sprintf("added %d bars", n)
 		if err != nil {
 			update = "loaded"
 		}
@@ -257,32 +259,48 @@ func (d *Data) Update(enabled bool) {
 	d.Unlock()
 
 	go func() {
-
+		if enabled {
+			log.Printf("UPDATE enabled")
+		}
 		for {
 			d.RLock()
 			enabled = d.update
 			d.RUnlock()
 			if !enabled {
+				log.Printf("UPDATE disabled")
 				return
 			}
 
-			d.RLock()
+			var wg sync.WaitGroup
+
+			// d.RLock()
 			for _, hist := range d.History {
 
-				limit := MAXLIMIT
-				if len(hist.Bars) != 0 {
-					// check how many new bars there is from last bars time
-					limit = calcLimit(hist.Bars[0].Time, hist.Timeframe)
-				}
+				wg.Add(1)
+				go func(hist *History, wg *sync.WaitGroup) {
+					defer wg.Done()
 
-				if limit != 0 {
-					go d.updateHistory(hist, limit)
-				}
+					limit := MAXLIMIT
+					for limit == MAXLIMIT {
+						if len(hist.Bars) != 0 {
+							// check how many new bars there is from last bars time
+							limit = calcLimit(hist.Bars[0].Time, hist.Timeframe)
+							if limit > MAXLIMIT {
+								limit = MAXLIMIT
+							}
+						}
 
+						if limit != 0 {
+							d.updateHistory(hist, limit)
+						}
+					}
+
+				}(hist, &wg)
 			}
-			d.RUnlock()
+			// d.RUnlock()
 
-			time.Sleep(5 * time.Second)
+			wg.Wait()
+			time.Sleep(10 * time.Second)
 		}
 	}()
 }
@@ -305,8 +323,9 @@ func (d *Data) updateHistory(h *History, limit int) {
 			continue
 		}
 		// success. update history
-		log.Printf("%s%s downloaded %d bars\n", h.Symbol, h.Timeframe, len(bars))
-		d.Add(h.Symbol, h.Timeframe, &bars)
+		// log.Printf("%s%s downloaded %d bars\n", h.Symbol, h.Timeframe, len(bars))
+
+		d.Add(h.Symbol, h.Timeframe, &bars, len(bars))
 		return
 	}
 

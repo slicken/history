@@ -108,8 +108,6 @@ func MakeFlags(events history.Events) ([]string, []string) {
 func (c *Chart) MakeHeader() ([]byte, error) {
 	return []byte(`
 	<head>
-		<title>events</title>
-		<meta charset="utf-8">
 		<script src="https://code.highcharts.com/stock/highstock.js"></script>
 		<script src="https://code.highcharts.com/modules/data.js"></script>
 		<script src="https://code.highcharts.com/stock/indicators/indicators.js"></script>
@@ -403,7 +401,7 @@ func (c *Chart) BuildCharts(data *history.Data) (buf []byte, err error) {
 }
 
 // BuildChartEvents ..
-func (c *Chart) BuildChartEvents(data *history.Data, events history.Events) (buf []byte, err error) {
+func (c *Chart) BuildChartEvents(data *history.Data, events history.Events, timeframe string) (buf []byte, err error) {
 
 	if len(events) > 0 {
 		// build page header
@@ -419,7 +417,7 @@ func (c *Chart) BuildChartEvents(data *history.Data, events history.Events) (buf
 			}
 
 			symbol := evt[0].Symbol
-			timeframe := evt[0].Timeframe
+			// timeframe := evt[0].Timeframe
 
 			chart, err := c.MakeChart(symbol+timeframe, data.Bars(symbol, timeframe), evt)
 			if err != nil {

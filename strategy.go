@@ -135,7 +135,6 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 
 					if event, ok := strat.Event(b); ok {
 						event.Symbol = hist.Symbol
-						event.Timeframe = hist.Timeframe
 
 						// add if new
 						if !event.Exists(events) {
@@ -156,10 +155,11 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 
 // Event will hold event data for specific time and price
 type Event struct {
-	Symbol, Timeframe string
-	Type, Text        string
-	Time              time.Time
-	Price             float64
+	Symbol string
+	Type   string
+	Text   string
+	Time   time.Time
+	Price  float64
 }
 
 // Add ..
@@ -208,7 +208,7 @@ func (ev Events) Map() map[string]Events {
 
 	for _, e := range ev {
 		// describe key
-		key := e.Symbol + e.Timeframe
+		key := e.Symbol
 		if key == "" {
 			key = "unknown"
 		}
