@@ -1,3 +1,5 @@
-main/data/*
-main/app
-main/build_windows.txt
+examples/data/*
+examples/app
+examples/ma*
+examples/build_windows.txt
+
