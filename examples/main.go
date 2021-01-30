@@ -344,7 +344,7 @@ type Signals struct {
 func (s *Signals) Event(bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	if s.sh+30 > len(bars) {
+	if s.sh+44 > len(bars) {
 		return event, false
 	}
 	// EXCLUDE SYMBOLS PRICE "0.000000xx"
@@ -365,9 +365,9 @@ func (s *Signals) Event(bars history.Bars) (history.Event, bool) {
 	sma20 := bars[s.sh : s.sh+20].SMA(history.C)
 	preslope20 := (bars[s.sh+4:s.sh+24].SMA(history.C) / bars[s.sh+5:s.sh+25].SMA(history.C)) - 1
 	slope20 := (bars[s.sh:s.sh+20].SMA(history.C) / bars[s.sh+1:s.sh+21].SMA(history.C)) - 1
-	// sma60 := bars[1:61].SMA(history.C)
-	// preslope60 := (bars[5:65].SMA(history.C) / bars[6:66].SMA(history.C)) - 1
-	// slope60 := (bars[1:61].SMA(history.C) / bars[2:62].SMA(history.C)) - 1
+
+	slope40 := (bars[1:41].SMA(history.C) / bars[2:42].SMA(history.C)) - 1
+	// preslope40 := (bars[5:45].SMA(history.C) / bars[6:46].SMA(history.C)) - 1
 
 	atr := bars[s.sh+1 : s.sh+15].ATR(history.C)
 	// wick := bars[1].WickDn()
@@ -380,7 +380,7 @@ func (s *Signals) Event(bars history.Bars) (history.Event, bool) {
 	// }
 
 	// SLOPE
-	if preslope20 > 0 && slope20 > 0 && slope20 > preslope20 &&
+	if preslope20 > 0 && slope20 > 0 && slope20 > preslope20 && slope40 > 0 &&
 		// ((l < sma20 && c > sma20) || (l < ema21 && c > ema21)) {
 		// l < sma20 && c > sma20 {
 		o-atr > sma20 && l <= sma20 && c > sma20 {
