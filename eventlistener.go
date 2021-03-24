@@ -36,9 +36,10 @@ func (e *EventListener) Start(data *Data, events *Events) {
 				// get bars and run strategies on them
 				bars := data.Bars(symbol, timeframe)
 				for _, strat := range e.strategies {
-					if new, ok := strat.Event(bars); ok && !new.Exists(*events) {
+					if new, ok := strat.Event(bars); ok && !events.Exists(new) {
 
 						new.Symbol = symbol
+						new.Timeframe = timeframe
 						*events = append(*events, new)
 						log.Printf("%s%s %s %s %.8f\n", symbol, timeframe, new.Type, new.Text, new.Price)
 					}

@@ -76,8 +76,8 @@ func Process(data *[]byte) (history.Bars, error) {
 	return list, nil
 }
 
-// MakeSymbolTimeframe helper func for binance that makes slice of requested symbols and timeframes
-func MakeSymbolTimeframe(currencie, timeframe string) ([]string, error) {
+// MakeSymbolMultiTimeframe helper func for binance that makes slice of requested symbols and timeframes
+func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string, error) {
 	// ExchangeInfo holds the full exchange information type
 	type ExchangeInfo struct {
 		Code       int    `json:"code"`
@@ -143,7 +143,22 @@ func MakeSymbolTimeframe(currencie, timeframe string) ([]string, error) {
 		if symbol.QuoteAsset != currencie || symbol.Status != "TRADING" {
 			continue
 		}
-		result = append(result, symbol.Symbol+timeframe)
+
+		// exclude list
+		ok := true
+		for _, x := range exclude {
+			if strings.Contains(symbol.QuoteAsset, x) || strings.Contains(symbol.BaseAsset, x) {
+				ok = false
+			}
+
+		}
+		if !ok {
+			continue
+		}
+
+		for _, tf := range timeframes {
+			result = append(result, symbol.Symbol+tf)
+		}
 	}
 
 	return result, nil

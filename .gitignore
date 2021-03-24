@@ -1,5 +1,4 @@
 examples/data/*
+examples/bin/*
 examples/app
-examples/ma*
 examples/build_windows.txt
-

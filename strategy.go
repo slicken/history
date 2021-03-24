@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const TFORMAT = "2006/01/02 15:04"
+const timeFormat = "2006/01/02 15:04"
 
 // Strategy interface using Bars type as Event condition
 type Strategy interface {
@@ -104,7 +104,7 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 	if len(data.History) == 0 {
 		return events, errNoHist
 	}
-	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(TFORMAT), end.Format(TFORMAT))
+	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(timeFormat), end.Format(timeFormat))
 
 	// MultiStrategy
 	if strat, ok := strat.(MultiStrategy); ok {
@@ -114,7 +114,7 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 			if event, ok := strat.Event(d); ok {
 
 				// add if new
-				if !event.Exists(events) {
+				if !events.Exists(event) {
 					events = append(events, event)
 				}
 			}
@@ -135,9 +135,10 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 
 					if event, ok := strat.Event(b); ok {
 						event.Symbol = hist.Symbol
+						event.Timeframe = hist.Timeframe
 
 						// add if new
-						if !event.Exists(events) {
+						if !events.Exists(event) {
 							rw.Lock()
 							events = append(events, event)
 							rw.Unlock()
@@ -151,72 +152,4 @@ func (data *Data) Test(strat interface{}, start, end time.Time) (Events, error) 
 
 	log.Printf("TEST completed with %d Events\n", len(events))
 	return events, nil
-}
-
-// Event will hold event data for specific time and price
-type Event struct {
-	Symbol string
-	Type   string
-	Text   string
-	Time   time.Time
-	Price  float64
-}
-
-// Add ..
-func (e *Event) Add(typ, text string, time time.Time, price float64) {
-	e.Type = typ
-	e.Text = text
-	e.Time = time
-	e.Price = price
-	//	e.Name = fmt.Sprintf("buy %.8f", price)
-}
-
-// Exists ..
-func (e *Event) Exists(events Events) bool {
-	for _, old := range events {
-		if e.Time == old.Time && e.Price == old.Price {
-			return true
-		}
-	}
-
-	return false
-}
-
-// // WithinBars ..
-// func (e *Event) WithinBars(events Events, limit int) bool {
-
-// 	for _, o := range events {
-// 		if e.Symbol == o.Symbol && e.Timeframe == o.Timeframe {
-// 			tf := time.Duration(Tf(o.Timeframe)) * time.Minute
-// 			diff := o.Time.Sub(e.Time)
-// 			bbw := -int(diff / tf)
-// 			if limit > bbw {
-// 				return true
-// 			}
-// 		}
-// 	}
-
-// 	return false
-// }
-
-// Events type
-type Events []Event
-
-// Map events
-func (ev Events) Map() map[string]Events {
-	m := make(map[string]Events, 0)
-
-	for _, e := range ev {
-		// describe key
-		key := e.Symbol
-		if key == "" {
-			key = "unknown"
-		}
-		if _, ok := m[key]; !ok {
-			m[key] = Events{e}
-			continue
-		}
-		m[key] = append(m[key], e)
-	}
-	return m
 }

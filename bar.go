@@ -2,7 +2,6 @@ package history
 
 import (
 	"math"
-	"sync"
 	"time"
 )
 
@@ -73,10 +72,12 @@ func (b Bar) Price(mode PriceMode) float64 {
 		return b.Low
 	case C:
 		return b.Close
-	case M:
-		return b.Open + b.High + b.Low + b.Close/4
-	case HL:
+	case HL2:
 		return b.High + b.Low/2
+	case HLC3:
+		return b.High + b.Low + b.Close/3
+	case OHLC4:
+		return b.Open + b.High + b.Low + b.Close/4
 	case V:
 		return b.Volume
 	default:
@@ -96,10 +97,12 @@ const (
 	L
 	// C price close
 	C
-	// M price median
-	M
-	// HL price volume
-	HL
+	// HL2 price volume
+	HL2
+	// HLC3 price median
+	HLC3
+	// OHLC4 price median
+	OHLC4
 	// V price volume
 	V
 )
@@ -200,45 +203,6 @@ func toUnix(t time.Time) int64 {
 	return t.UnixNano() / 1e6
 }
 
-// merge bars itterate function
-func merge(bars ...*Bars) *Bars {
-	c := make(chan Bar)
-
-	go func() {
-		var wg sync.WaitGroup
-		for _, li := range bars {
-
-			wg.Add(1)
-			go func(l *Bars) {
-				defer wg.Done()
-
-				for _, b := range *l {
-					c <- b
-				}
-			}(li)
-		}
-
-		wg.Wait()
-		close(c)
-	}()
-
-	// make merged
-	var f = make(map[time.Time]bool, 0)
-	var merged = make(Bars, 0)
-
-	for b := range c {
-		if _, ok := f[b.Time]; !ok {
-			merged = append(merged, b)
-		}
-		f[b.Time] = true
-	}
-
-	// sort it
-	merged = merged.Sort()
-
-	return &merged
-}
-
 // T ..
 func (b Bar) T() time.Time {
 	return b.Time
@@ -301,12 +265,12 @@ func (b Bar) Bear() bool {
 
 // Bullish that  closes upper 33%
 func (b Bar) Bullish() bool {
-	return b.Close > (b.High - b.Range()/3)
+	return b.Close > (b.High - b.Range()/2)
 }
 
 // Bearish that  closes bottom 33%
 func (b Bar) Bearish() bool {
-	return b.Close < (b.Low + b.Range()/3)
+	return b.Close < (b.Low + b.Range()/2)
 }
 
 // WickUp ..

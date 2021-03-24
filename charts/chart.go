@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 
 	"github.com/slicken/history"
@@ -47,6 +48,7 @@ const (
 func DefaultChart() *Chart {
 	return &Chart{
 		Type: Candlestick,
+		//		SMA:    []int{20,200},
 		//		EMA:    []int{21},
 		Volume: true,
 		//		VolumeSMA: 7,
@@ -59,34 +61,38 @@ func DefaultChart() *Chart {
 }
 
 /*
-	var ohlc = `[
-	{"x":1547337600000,"open":3584.1,"high":3611.1,"low":3441.3,"close":3476.81,dataLabels: { enabled: true }},
-	{"x":1547683200000,"open":3591.84,"high":3634.7,"low":3530.39,"close":3616.21,"name":"test","color":"black"},
+highcharts series
+
+var ohlc = `[
+{"x":1547337600000,"open":3584.1,"high":3611.1,"low":3441.3,"close":3476.81,dataLabels: { enabled: true }},
+{"x":1547683200000,"open":3591.84,"high":3634.7,"low":3530.39,"close":3616.21,"name":"test","color":"black"},
 */
 
-// MakeOHLC creates bars for charts
+// MakeOHLC = price
 func MakeOHLC(bars history.Bars) ([]byte, error) {
 	var data []interface{}
 
-	for i := len(bars) - 1; i >= 0; i-- {
+	count := int(math.Min(float64(len(bars)), MAXLIMIT))
+	for i := count - 1; i >= 0; i-- {
 		v := []interface{}{bars[i].Time.Unix() * 1000, bars[i].Open, bars[i].High, bars[i].Low, bars[i].Close}
 		data = append(data, v)
 	}
 	return json.Marshal(&data)
 }
 
-// MakeVolume creates bars for charts
+// MakeVolume ..
 func MakeVolume(bars history.Bars) ([]byte, error) {
 	var vol []interface{}
 
-	for i := len(bars) - 1; i >= 0; i-- {
+	count := int(math.Min(float64(len(bars)), MAXLIMIT))
+	for i := count - 1; i >= 0; i-- {
 		v := []interface{}{bars[i].Time.Unix() * 1000, bars[i].Volume}
 		vol = append(vol, v)
 	}
 	return json.Marshal(&vol)
 }
 
-// MakeFlags creates bars for charts
+// MakeFlags events
 func MakeFlags(events history.Events) ([]string, []string) {
 	var buy, sell = make([]string, 0), make([]string, 0)
 
@@ -106,14 +112,17 @@ func MakeFlags(events history.Events) ([]string, []string) {
 
 // MakeHeader creates chart headers
 func (c *Chart) MakeHeader() ([]byte, error) {
+	// <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 	return []byte(`
 	<head>
+		<meta name="viewport" content="width=device-width"/>
 		<script src="https://code.highcharts.com/stock/highstock.js"></script>
 		<script src="https://code.highcharts.com/modules/data.js"></script>
 		<script src="https://code.highcharts.com/stock/indicators/indicators.js"></script>
 		<script src="https://code.highcharts.com/stock/indicators/ema.js"></script>
 	</head>
 	<style>
+		html{font-family: 'Lato',sans-serif;}
 		body{
 			overflow: auto;
 			background: whitesmoke;
@@ -140,8 +149,8 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 	if err != nil {
 		return nil, err
 	}
-	if len(ohlc) < 2 {
-		return nil, errors.New("no data")
+	if len(ohlc) == 0 {
+		return nil, errors.New("no price data")
 	}
 
 	return []byte(`
@@ -254,7 +263,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
             type: '` + string(c.Type) + `',
 			name: '` + name + `',
 			id: '` + name + `',
-			zIndex: 4,
+			zIndex: 5,
 			data: ` + fmt.Sprintf("%s", ohlc) + `,
 			shadow: ` + fmt.Sprintf("%v", c.Shadow) + `,` +
 
@@ -268,7 +277,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 				}, {
 					type: 'flags',
 					data: ` + fmt.Sprintf("%s", flagB) + `,
-					zIndex: 3,
+					zIndex: 19,
 					onSeries: '` + name + `',
 					shape: 'circlepin',
 					color: 'green',
@@ -283,7 +292,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 				}, {
 					type: 'flags',
 					data: ` + fmt.Sprintf("%s", flagS) + `,
-					zIndex: 3,
+					zIndex: 20,
 					onSeries: '` + name + `',
 					shape: 'circlepin',
 					color: '#f45b5b',
@@ -304,7 +313,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 					id: 'vol',
 					data: ` + fmt.Sprintf("%s", volume) + `,
 					yAxis: 1,
-					zIndex: 2,
+					zIndex: 1,
 					shadow: ` + fmt.Sprintf("%v", c.Shadow) + `,`
 				// volume sma
 				if c.VolumeSMA > 0 {
@@ -316,7 +325,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 							period: ` + fmt.Sprintf("%v", c.VolumeSMA) + `,
 						},
 						yAxis: 1,
-						zIndex: 1,`
+						zIndex: 2,`
 				}
 			}
 			// sma's
@@ -329,7 +338,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 						params: {
 							period: ` + fmt.Sprintf("%v", v) + `,
 						},
-						zIndex: 1,`
+						zIndex: 4,`
 				}
 			}
 			// ema's
@@ -342,7 +351,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 						params: {
 							period: ` + fmt.Sprintf("%v", v) + `,
 						},
-						zIndex: 1,`
+						zIndex: 3,`
 				}
 			}
 			return
@@ -401,7 +410,7 @@ func (c *Chart) BuildCharts(data *history.Data) (buf []byte, err error) {
 }
 
 // BuildChartEvents ..
-func (c *Chart) BuildChartEvents(data *history.Data, events history.Events, timeframe string) (buf []byte, err error) {
+func (c *Chart) BuildChartEvents(data *history.Data, events history.Events) (buf []byte, err error) {
 
 	if len(events) > 0 {
 		// build page header
@@ -417,7 +426,7 @@ func (c *Chart) BuildChartEvents(data *history.Data, events history.Events, time
 			}
 
 			symbol := evt[0].Symbol
-			// timeframe := evt[0].Timeframe
+			timeframe := evt[0].Timeframe
 
 			chart, err := c.MakeChart(symbol+timeframe, data.Bars(symbol, timeframe), evt)
 			if err != nil {

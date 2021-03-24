@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -13,9 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/slicken/history/charts"
-
 	"github.com/slicken/history"
+	"github.com/slicken/history/charts"
 )
 
 var (
@@ -23,20 +21,36 @@ var (
 	events = new(history.Events)        // results (events) from strategy that we can later can plot
 	evl    = new(history.EventListener) // we add our strategy to eventlistener witch is looking at the data
 
-	strat = &Signals{sh: 0}       // strategy for this example
+	//strat = &Gainers{days: 30}    // strategy for this example
 	chart = charts.DefaultChart() // small chart module (highcharts.com)
 	conf  = new(Config)           // config from args
+
+	exclude = []string{"DOWN", "UP", "BULL", "BEAR", "AUD", "BUSD", "BIDR", "BKRW", "DAI", "EUR", "GBP", "IDRT", "NGN", "PAX", "RUB", "TUSD", "TRY", "UAH", "USDC", "ZAR", "BUSD"}
 )
 
-// Config ..
+// Config holds app arguments
 type Config struct {
-	tf    string
+	tf    slice
 	quote string
+	force string // only for one
 	// chart settings
-	limit  int
-	ctype  string
-	volume bool
+	limit int
+	ctype string
 }
+
+type slice []string
+
+func (i *slice) String() string {
+	return fmt.Sprintf("%v", *i)
+}
+func (i *slice) Set(value string) error {
+	for _, v := range strings.Split(value, ",") {
+		*i = append(*i, v)
+	}
+	return nil
+}
+
+var symbols []string
 
 func main() {
 	// ----------------------------------------------------------------------------------------------
@@ -49,43 +63,42 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// config from args
 	// ----------------------------------------------------------------------------------------------
-	flag.StringVar(&conf.tf, "tf", "", "timeframe")
-	flag.StringVar(&conf.quote, "quote", "BTC", "build symbols from quote")
+	flag.Var(&conf.tf, "tf", "timeframes 4h or 1d,4h,1h...")
+	flag.StringVar(&conf.quote, "quote", "USDT", "build symbols from quote")
+	flag.StringVar(&conf.force, "force", "", "force")
 
-	flag.IntVar(&conf.limit, "limit", 210, "max bars")
+	flag.IntVar(&conf.limit, "limit", 210, "max bars (0=no limit)")
 	flag.StringVar(&conf.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
-	flag.BoolVar(&conf.volume, "vol", true, "volume axis")
 	flag.Parse()
 
-	// ----------------------------------------------------------------------------------------------
-	// check for some errors in tmeframe arg
-	// ----------------------------------------------------------------------------------------------
-	if history.Tfs(history.Tf(conf.tf)) == "" {
-		log.Fatalln("unknown timeframe")
-	}
-	conf.tf = history.Tfs(history.Tf(conf.tf))
-	// ----------------------------------------------------------------------------------------------
-	//create slice of charts we will be loading
-	// ----------------------------------------------------------------------------------------------
-	symbols, err := MakeSymbolTimeframe(conf.quote, conf.tf)
-	if err != nil {
-		log.Fatal("could not make symbols:", err)
-	}
-
-	// symbols := []string{"BTCUSDT", "ETHBTC", "DOTBTC", "XMRBTC", "BNBBTC", "LTCBTC", "ENJBTC", "ADABTC", "RENBTC"}
-	// var tmp []string
-	// for _, sym := range symbols {
-	// 	s := fmt.Sprintf("%v%v", sym, conf.tf)
-	// 	fmt.Println(s)
-	// 	tmp = append(tmp, s)
-	// }
-	// symbols = tmp
 	// ----------------------------------------------------------------------------------------------
 	// chart settings (highcharts)
 	// ----------------------------------------------------------------------------------------------
 	chart.Type = charts.ChartType(conf.ctype)
-	chart.Volume = conf.volume
-	chart.SMA = []int{20, 40}
+	chart.SMA = []int{20, 200} //, 50, 100} // only working ikognito somtimes.
+	// ----------------------------------------------------------------------------------------------
+	// check for some errors in tmeframe arg
+	// ----------------------------------------------------------------------------------------------
+	var tfFix []string
+	for _, v := range conf.tf {
+		if history.Tfs(history.Tf(v)) == "" {
+			log.Fatalln("unknown timeframe")
+		}
+		fix := history.Tfs(history.Tf(v))
+		tfFix = append(tfFix, fix)
+	}
+	conf.tf = tfFix
+	// ----------------------------------------------------------------------------------------------
+	//create slice of charts we will be loading
+	// ----------------------------------------------------------------------------------------------
+	symbols = []string{conf.force}
+	if conf.force == "" {
+		var err error
+		symbols, err = MakeSymbolMultiTimeframe(conf.quote, conf.tf...)
+		if err != nil {
+			log.Fatal("could not make symbols:", err)
+		}
+	}
 
 	log.Println("initalizing...")
 	// ----------------------------------------------------------------------------------------------
@@ -95,7 +108,8 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// load sybols
 	// ----------------------------------------------------------------------------------------------
-	data.Load(symbols) //[]string{"BTCUSDT1m"})
+	// symbols = []string{"BTCUSDT15m", "BTCUSDT1h", "BTCUSDT4h", "BTCUSDT1d"}
+	data.Load(symbols)
 	// ----------------------------------------------------------------------------------------------
 	// keep looking for new bars and keep updating the data struct
 	// ----------------------------------------------------------------------------------------------
@@ -103,309 +117,190 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// add strategy to event listener
 	// ----------------------------------------------------------------------------------------------
-	// evl.Add(&MaCrossing{8, 20})
-	// evl.Add(&TD{1})
-	// evl.Add(&Engulf{1})
-	// evl.Add(&MaCrossing{10, 21})
-	evl.Add(strat)
+	// evl.Add(strat)
 	// ----------------------------------------------------------------------------------------------
 	// start event listener
 	// ----------------------------------------------------------------------------------------------
-	evl.Start(data, events)
+	// evl.Start(data, events)
 
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
 	http.HandleFunc("/", httpIndex)
-	http.HandleFunc("/sort", httpSort)
-	http.HandleFunc("/test", httpTest)
-	http.HandleFunc("/events", httpEvents)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// run strategy on current bar and plot event on chart
+func httpRoutes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	symbol := r.URL.Path[1:]
+	symbol = strings.Replace(symbol, "favicon.ico", "", -1)
+
+	fmt.Println(symbol)
+	return
+}
+
 func httpIndex(w http.ResponseWriter, r *http.Request) {
+	arg := r.URL.Path[1:]
+
+	var err error
+	var n int
+	n, err = strconv.Atoi(arg)
+	if err != nil {
+		n = 30
+	}
+
+	// clear events
+	eventsNew := new(history.Events)
+	events = eventsNew
+	evlNew := new(history.EventListener)
+	evl = evlNew
+	evl.Add(&Gainers{days: n})
+	evl.Start(data, events)
+
+	data.CUpdate()
+	time.Sleep(1 * time.Second)
+
+	events := *events
+	events.Sort()
+
+	var datacut = new(history.Data)
+	i := 0
+	for _, e := range events {
+		if i > 10 {
+			break
+		}
+		// debug
+		// fmt.Println(e.Symbol+e.Timeframe, "\t", e.Value)
+
+		for _, hist := range data.History {
+			if hist.Symbol == e.Symbol && hist.Timeframe == e.Timeframe {
+				datacut.History = append(datacut.History, hist)
+				// datacut.History = append([]*history.History{hist}, datacut.History...)
+			}
+		}
+		i++
+	}
+
 	// limit data
-
-	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
-	start := time.Now().Add(-min)
-	datacut := data.TimeSpan(start, time.Now())
-
-	ev := *events
-	// build chart
-	c, err := chart.BuildChartEvents(datacut, ev, conf.tf)
+	datacut = datacut.Limit(conf.limit)
+	c, err := chart.BuildCharts(datacut)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Write(c)
-}
-
-// sort events
-func httpSort(w http.ResponseWriter, r *http.Request) {
-	// limit data
-	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
-	start := time.Now().Add(-min)
-	datacut := data.TimeSpan(start, time.Now())
-
-	ev := *events
-	// sort event by text (strategies)
-	var eventList = make(map[string]history.Events)
-	for _, event := range ev {
-		t := event.Text
-		eventList[t] = append(eventList[t], event)
-	}
-
-	var chartList = make(map[string][]byte)
-	for k, v := range eventList {
-		c, err := chart.BuildChartEvents(datacut, v, conf.tf)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		chartList[k] = c
-	}
-
-	// make data and insert topic
+	// add html topic
 	var b []byte
-	for k, v := range chartList {
-		// add a topic
-		topic := fmt.Sprintf(`<h1>%s (%d)</h1>`, k, len(eventList[k]))
-		b = append(b, []byte(topic)...)
-		// add charts
-		b = append(b, v...)
-	}
+	topic := fmt.Sprintf(`<h1>TOP GAINERS PAST %d DAYS</h1>`, n)
+	b = append(b, []byte(topic)...)
+	b = append(b, c...)
 
 	w.Write(b)
 }
 
-// backtest strategy and plot events on chart
-func httpTest(w http.ResponseWriter, r *http.Request) {
-	// limit data
-	min := time.Duration(conf.limit*int(history.Tf(conf.tf))) * time.Minute
-	start := time.Now().Add(-min)
-	datacut := data.TimeSpan(start, time.Now())
-
-	// run strategy backtest on all data
-	ev, err := datacut.Test(strat, datacut.FirstTime(), datacut.LastTime())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// build charts
-	c, err := chart.BuildChartEvents(datacut, ev, conf.tf)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(c)
+// Gainers
+type Gainers struct {
+	days int
 }
 
-// list all events
-func httpEvents(w http.ResponseWriter, r *http.Request) {
-	// var buf []byte
+// Event Signals ..
+func (s *Gainers) Event(bars history.Bars) (history.Event, bool) {
+	var event history.Event
 
-	// for _, event := range *events {
-	// 	buf = append(buf, fmt.Sprintf("%s%s %s %s %.8f %v\n", event.Symbol, event.Timeframe, event.Type, event.Text, event.Price, event.Time)...)
+	if s.days+1 > len(bars) {
+		return event, false
+	}
+
+	gain := 100 * ((bars[0].C() - bars[0:s.days].Lowest(history.O)) / bars[0:s.days].Lowest(history.C))
+
+	if gain > 0 {
+		event.Add("BUY", fmt.Sprintf("%.1f", gain), bars.LastBar().T(), bars.LastBar().H())
+		event.Value = gain
+		return event, true
+	}
+	// if gain < 0 {
+	// 	event.Add("SELL", fmt.Sprintf("%.1f", gain), bars.LastBar().T(), bars.LastBar().H())
+	// 	event.Value = gain
+	// 	return event, true
 	// }
 
-	// w.Write(buf)
-
-	b, err := json.MarshalIndent(events, "", "\t")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write(b)
-}
-
-// Engulf ..
-type Engulf struct {
-	shift int
-}
-
-// Event Engulf signal
-func (s *Engulf) Event(bars history.Bars) (history.Event, bool) {
-	var event history.Event
-
-	if s.shift+3 > len(bars) {
-		return event, false
-	}
-
-	if bars[s.shift:s.shift+2].IsEngulfBuy() && bars[s.shift].Bullish() {
-		event.Add("BUY", "ENGULF", bars[0].Time, bars[0].O())
-		return event, true
-	}
-	if bars[s.shift:s.shift+2].IsEngulfSell() && bars[s.shift].Bearish() {
-		event.Add("SELL", "ENGULF", bars[0].Time, bars[0].O())
-		return event, true
-	}
-
 	return event, false
 }
 
-// TD Sequential 9
-type TD struct {
-	shift int
-}
-
-// Event TD ..
-func (s *TD) Event(bars history.Bars) (history.Event, bool) {
-	var event history.Event
-
-	if s.shift+30 > len(bars) {
-		return event, false
+func Stats() {
+	var okokokokoko = []time.Weekday{
+		time.Sunday,
+		time.Monday,
+		time.Tuesday,
+		time.Wednesday,
+		time.Thursday,
+		time.Friday,
+		time.Saturday,
 	}
 
-	td := bars[s.shift : s.shift+30].TD()
+	var Stats = make(map[string]map[time.Weekday]float64, 0)
 
-	if td < 0 {
-		if td == -2 {
-			event.Add("BUY", "TDP", bars[0].Time, bars[0].O())
-		} else {
-			event.Add("BUY", "TD", bars[0].Time, bars[0].O())
+	for _, s := range data.List() {
+
+		sym, tf := history.Split(s)
+		if sym == "" || tf == "" {
+			continue
 		}
-		return event, true
-	}
-	if td > 0 {
-		if td == 2 {
-			event.Add("SELL", "TDP", bars[0].Time, bars[0].O())
-		} else {
-			event.Add("SELL", "TD", bars[0].Time, bars[0].O())
+		bars := data.Bars(sym, tf)
+		if 100 > len(bars) {
+			continue
 		}
-		return event, true
+
+		var Day = make(map[time.Weekday]float64, 0)
+
+		for _, b := range bars {
+			Day[b.T().Weekday()] += b.PercMove()
+		}
+
+		for _, i := range okokokokoko {
+			Day[i] /= float64(len(bars)) / float64(len(okokokokoko))
+		}
+
+		Stats[sym+tf] = Day
+
 	}
 
-	return event, false
-}
+	var stats string
 
-// MaCrossing simple ma crossover NOW
-type MaCrossing struct {
-	fast int
-	slow int
-}
+	var Sum = make(map[time.Weekday]float64, 0)
+	for k, v := range Stats {
 
-// Event Test ..
-func (s *MaCrossing) Event(bars history.Bars) (history.Event, bool) {
-	var event history.Event
+		stats += fmt.Sprintln(k, "-----------------------------------------")
 
-	if s.fast == 0 {
-		s.fast = 10
-	}
-	if s.slow == 0 {
-		s.slow = 21
-	}
-
-	if len(bars) < s.slow+1 {
-		return event, false
-	}
-
-	fast0 := bars[1 : 1+s.fast].EMA(history.C)
-	fast1 := bars[2 : 2+s.fast].EMA(history.C)
-	slow0 := bars[1 : 1+s.slow].EMA(history.C)
-	slow1 := bars[2 : 2+s.slow].EMA(history.C)
-
-	name := fmt.Sprintf("EMA CROSS %d&%d", s.fast, s.slow)
-
-	if slow1 >= fast1 && slow0 < fast0 {
-		event.Add("BUY", name, bars[0].Time, bars[0].O())
-		return event, true
-	}
-
-	if fast1 >= slow1 && fast0 < slow0 {
-		event.Add("SELL", name, bars[0].Time, bars[0].O())
-		return event, true
-	}
-
-	return event, false
-}
-
-// CountDecimal counts decimals
-func CountDecimal(v float64) int {
-	s := strconv.FormatFloat(v, 'f', -1, 64)
-	i := strings.IndexByte(s, '.')
-	if i > -1 {
-		return len(s) - i - 1
-	}
-	return 0
-}
-
-// Signals many
-type Signals struct {
-	sh int
-}
-
-// Event Test ..
-func (s *Signals) Event(bars history.Bars) (history.Event, bool) {
-	var event history.Event
-
-	if s.sh+44 > len(bars) {
-		return event, false
-	}
-	// EXCLUDE SYMBOLS PRICE "0.000000xx"
-	if p := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(p) >= 7 {
-		if "0.00000" == p[:7] {
-			return event, false
+		for i, j := range v { //okokokokoko {
+			stats += fmt.Sprintf("%-10s  %-10.2f\n", i, j)
+			Sum[i] += j
 		}
 	}
 
-	o := bars[s.sh].O()
-	// h := bars[s.sh].H()
-	l := bars[s.sh].L()
-	c := bars[s.sh].C()
-	// body := bars[1].Body()
+	stats += "\n"
 
-	// ema21 := bars[1:22].EMA(history.C)
+	for i, _ := range Sum {
+		Sum[i] /= float64(len(Stats))
 
-	sma20 := bars[s.sh : s.sh+20].SMA(history.C)
-	preslope20 := (bars[s.sh+4:s.sh+24].SMA(history.C) / bars[s.sh+5:s.sh+25].SMA(history.C)) - 1
-	slope20 := (bars[s.sh:s.sh+20].SMA(history.C) / bars[s.sh+1:s.sh+21].SMA(history.C)) - 1
-
-	slope40 := (bars[1:41].SMA(history.C) / bars[2:42].SMA(history.C)) - 1
-	// preslope40 := (bars[5:45].SMA(history.C) / bars[6:46].SMA(history.C)) - 1
-
-	atr := bars[s.sh+1 : s.sh+15].ATR(history.C)
-	// wick := bars[1].WickDn()
-
-	//	if wickdn > 2.8*atr { // && wickdn > body {
-
-	// if wick > 1.5*atr {
-	// 	event.Add("BUY", "WICK", bars[0].Time, bars[1].O())
-	// 	return event, true
-	// }
-
-	// SLOPE
-	if preslope20 > 0 && slope20 > 0 && slope20 > preslope20 && slope40 > 0 &&
-		// ((l < sma20 && c > sma20) || (l < ema21 && c > ema21)) {
-		// l < sma20 && c > sma20 {
-		o-atr > sma20 && l <= sma20 && c > sma20 {
-
-		event.Add("BUY", "SLOPE", bars[s.sh].Time, bars[s.sh].C())
-		return event, true
+		stats += fmt.Sprintln(i, Sum[i])
 	}
 
-	// SLOPE2
-	// if preslope > 0 && slope > 0 &&  {
-	// 	event.Add("BUY", "TEST", bars[0].Time, bars[1].O())
-	// 	return event, true
-	// }
+	fmt.Println(stats)
 
-	// // WICK20
-	// if o > sma20 && l < sma20 && c > sma20 {
-	// 	event.Add("BUY", "WICK MA20", bars[0].Time, bars[1].O())
-	// 	return event, true
-	// }
+	// write to file
+	f, err := os.Create("stats.txt")
+	if err != nil {
+		panic(err)
+	}
 
-	// VOLUME CLIMAX
-	// if bars[1].V() > 2.8*bars[2:37].EMA(history.V) {
-	// 	event.Add("BUY", "VOL CLIMAX", bars[1].Time, bars[1].O())
-	// 	return event, true
-	// }
+	defer f.Close()
+	if _, err := f.WriteString(stats); err != nil {
+		panic(err)
+	}
 
-	return event, false
 }
