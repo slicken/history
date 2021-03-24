@@ -36,15 +36,14 @@ func ReadBars(symbol, timeframe string) (Bars, error) {
 }
 
 // SaveBars saves bars to file
-func SaveBars(symbol, timeframe string, bars *Bars) error {
+func SaveBars(symbol, timeframe string, bars Bars) error {
 	// merge if file alredy exist
 	if old, err := ReadBars(symbol, timeframe); err == nil {
-		new := *merge(&old, bars)
-		// skip if new bars equals old
-		if new[0].Time == old[0].Time && old[len(old)-1].Time == new[len(new)-1].Time {
+		// skip if new last equeals old of
+		if bars.LastBar() == old.LastBar() {
 			return nil
 		}
-		bars = &new
+		bars = merge(old, bars)
 	}
 
 	b, err := json.MarshalIndent(&bars, "", "\t")
@@ -52,7 +51,7 @@ func SaveBars(symbol, timeframe string, bars *Bars) error {
 		return err
 	}
 
-	// create DATADIR if not exist
+	// create DATADIR if does not exist
 	if _, err := os.Stat(DATADIR); err != nil {
 		if err := os.MkdirAll(DATADIR, os.ModePerm); err != nil {
 			log.Fatal(err)
@@ -93,6 +92,5 @@ func Split(s string) (string, string) {
 		}
 	}
 
-	// not found
 	return "", ""
 }
