@@ -92,10 +92,3 @@ func (ev Events) Map() map[string]Events {
 	}
 	return m
 }
-
-// Sort Events
-func (ev *Events) Clear() {
-	newEvents := new(Events)
-
-	ev = newEvents
-}

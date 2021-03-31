@@ -195,7 +195,7 @@ func (d *Data) Delete(symbol, timeframe string) error {
 }
 
 // Load loads symbols from slice defined with symboltf strings
-func (d *Data) Load(symbols []string) error {
+func (d *Data) Load(symbols ...string) error {
 	var wg sync.WaitGroup
 
 	for _, s := range symbols {
@@ -219,12 +219,79 @@ func (d *Data) Load(symbols []string) error {
 	return nil
 }
 
+// // Add new history safely to datastruct
+// func (d *Data) Add(symbol, timeframe string, bars Bars, n int) error {
+
+// 	// create or get history
+// 	hist, err := d.history(symbol, timeframe)
+// 	if err != nil {
+// 		hist = new(History)
+// 		hist.Symbol = symbol
+// 		hist.Timeframe = timeframe
+
+// 		d.Lock()
+// 		d.History = append(d.History, hist)
+// 		// increase cap by +1
+// 		c := make(chan string, len(d.History))
+// 		// copy values to new channel
+// 		for len(d.C) > 0 {
+// 			select {
+// 			case v, _ := <-d.C:
+// 				c <- v
+// 			default:
+// 			}
+// 		}
+// 		d.C = c
+// 		d.Unlock()
+// 	}
+
+// 	// add or merge bars
+// 	if len(bars) != 0 {
+// 		update := fmt.Sprintf("added %d bars", n)
+// 		if err != nil {
+// 			update = "loaded"
+// 		}
+
+// 		d.Lock()
+
+// 		// save bars
+// 		if update != "loaded" {
+// 			if err = SaveBars(symbol, timeframe, bars); err != nil {
+// 				log.Printf("could not save %s%s bars: %v\n", hist.Symbol, hist.Timeframe, err)
+// 			}
+// 		}
+
+// 		// update history
+// 		hist.lastUpdate = time.Now()
+// 		hist.Bars = merge(hist.Bars, bars)
+
+// 		d.Unlock()
+
+// 		log.Printf("%s%s %s\n", hist.Symbol, hist.Timeframe, update)
+
+// 		// notify data.C that we have updated symbol (not when loading)
+// 		if n > 0 {
+// 			select {
+// 			case d.C <- (symbol + timeframe):
+// 			default:
+// 			}
+// 		}
+// 	}
+
+// 	return nil
+// }
+
 // Add new history safely to datastruct
 func (d *Data) Add(symbol, timeframe string, bars Bars, n int) error {
+	// d.RLock()
+	// defer d.RUnlock()
+	var msg string
 
 	// create or get history
 	hist, err := d.history(symbol, timeframe)
 	if err != nil {
+		msg = "loaded"
+
 		hist = new(History)
 		hist.Symbol = symbol
 		hist.Timeframe = timeframe
@@ -243,38 +310,32 @@ func (d *Data) Add(symbol, timeframe string, bars Bars, n int) error {
 		}
 		d.C = c
 		d.Unlock()
+
+	} else {
+		// save bars
+		msg = fmt.Sprintf("added %d bars", n)
+
+		if err = SaveBars(symbol, timeframe, bars); err != nil {
+			log.Printf("could not save %s%s bars: %v\n", hist.Symbol, hist.Timeframe, err)
+		}
+	}
+	if len(bars) == 0 {
+		return nil
 	}
 
-	// add or merge bars
-	if len(bars) != 0 {
-		update := fmt.Sprintf("added %d bars", n)
-		if err != nil {
-			update = "loaded"
-		}
+	// update history
+	d.Lock()
+	hist.lastUpdate = time.Now()
+	hist.Bars = merge(hist.Bars, bars)
+	d.Unlock()
 
-		d.Lock()
+	log.Printf("%s%s %s\n", hist.Symbol, hist.Timeframe, msg)
 
-		// save bars
-		if update != "loaded" {
-			if err = SaveBars(symbol, timeframe, bars); err != nil {
-				log.Printf("could not save %s%s bars: %v\n", hist.Symbol, hist.Timeframe, err)
-			}
-		}
-
-		// update history
-		hist.lastUpdate = time.Now()
-		hist.Bars = merge(hist.Bars, bars)
-
-		d.Unlock()
-
-		log.Printf("%s%s %s\n", hist.Symbol, hist.Timeframe, update)
-
-		// notify data.C that we have updated symbol (not when loading)
-		if n > 0 {
-			select {
-			case d.C <- (symbol + timeframe):
-			default:
-			}
+	// notify data.C that we have updated symbol (not when loading)
+	if n > 0 {
+		select {
+		case d.C <- (symbol + timeframe):
+		default:
 		}
 	}
 
@@ -351,8 +412,12 @@ func (d *Data) updateHistory(h *History, limit int) {
 			time.Sleep(2 * time.Second)
 			continue
 		}
+		// since we always "gets" the current bar witch is not finish, we dont want to save that
+		if len(bars) == 1 {
+			return
+		}
 		// success. add to history
-		d.Add(h.Symbol, h.Timeframe, bars[1:], len(bars))
+		d.Add(h.Symbol, h.Timeframe, bars[1:], len(bars)-1)
 		return
 	}
 
