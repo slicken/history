@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -170,22 +168,4 @@ func GetExchangeInfo() (ExchangeInfo, error) {
 
 	json.Unmarshal(b, &ei)
 	return ei, err
-}
-
-func SaveTradingViewFile() {
-	fmt.Println("usage: --list [quote] [timeframe] [days]")
-
-	buf := bytes.NewBuffer(nil)
-
-	res := []string{}
-	for v := range hist.Bars {
-		n := len(v)
-		res = append(res, v[:n-2]+",")
-	}
-
-	buf.WriteString(fmt.Sprintf("%v", res))
-	ioutil.WriteFile(conf.quote+".txt", buf.Bytes(), 0644)
-
-	log.Println("saved list.txt of top preformers on " + conf.quote)
-	os.Exit(0)
 }

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -39,6 +41,8 @@ type Config struct {
 	// top preformers
 	topPairs int
 	topLimit int
+	file     bool // output top preformers to file
+
 	// chart settings
 	limit int
 	ctype string
@@ -73,6 +77,7 @@ func main() {
 
 	flag.IntVar(&conf.topPairs, "top", 0, "top preforming pairs")
 	flag.IntVar(&conf.topLimit, "topl", 30, "top preforming pars, bars")
+	flag.BoolVar(&conf.file, "file", false, "save top preformers to file")
 
 	flag.IntVar(&conf.limit, "limit", 300, "limit bars (0=off)")
 	flag.StringVar(&conf.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
@@ -297,6 +302,16 @@ func TopPreformers(h *history.History, bars int) []string {
 	for _, e := range ev {
 		res = append(res, e.Pair)
 		// log.Printf("%-12s %.2f %%\n", e.Pair, e.Price)
+	}
+	// save to file (compatible with tradingview imports)
+	if conf.file {
+		var buf = bytes.NewBuffer(nil)
+		var tmp []string
+		for _, v := range res {
+			tmp = append(res, v+",") // v[:len(v)-2]
+		}
+		buf.WriteString(fmt.Sprintf("%v", tmp))
+		ioutil.WriteFile(conf.quote+".txt", buf.Bytes(), 0644)
 	}
 
 	return res
