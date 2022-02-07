@@ -90,18 +90,18 @@ func calcLimit(last time.Time, period time.Duration) int {
 }
 
 // SplitPair returns base quote
-func Split(s string) (sym string, tf string) {
-	// split symbol timeframe
+func Split(s string) (pair string, tf string) {
+	// split pair and timeframe
 	for i := len(s); i >= 0; i-- {
-		sym = s[:len(s)-i]
+		pair = s[:len(s)-i]
 		tf = s[len(s)-i:]
-		if tf := TFi(tf); tf != 0 {
+		if tf := TF2Interval(tf); tf != 0 {
 			s = s[:len(s)-i]
 			break
 		}
 	}
 
-	return sym, tf
+	return pair, tf
 }
 
 func toUnix(t time.Time) int64 {

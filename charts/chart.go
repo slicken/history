@@ -98,11 +98,11 @@ func MakeEventFlags(events history.Events) ([]string, []string) {
 	for _, event := range events {
 		// s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, EventTypes[event.Type], fmt.Sprintf("%s\n%s", event.Title, event.Text))
 
-		if event.Type == 0 || event.Type == 2 {
+		if event.Type == 0 || event.Type == 2 || event.Type == 5 {
 			s := fmt.Sprintf(`{"x":%d,"title":"B","text":%q},`, event.Time.Unix()*1000, (event.Title + " " + history.EventTypes[event.Type] + " " + event.Text))
 			buy = append(buy, s)
 		}
-		if event.Type == 1 || event.Type == 3 {
+		if event.Type == 1 || event.Type == 3 || event.Type == 4 {
 			s := fmt.Sprintf(`{"x":%d,"title":"S","text":%q},`, event.Time.Unix()*1000, (event.Title + " " + history.EventTypes[event.Type] + " " + event.Text))
 			sell = append(sell, s)
 		}
@@ -389,25 +389,53 @@ func (c *Chart) BuildCharts(m map[string]history.Bars, events ...history.Event) 
 	}
 
 	if len(events) > 0 {
+		pairEvents := history.MapEvents(events...)
+		done := make(map[string]bool)
 
-		for _, evt := range history.MapEvents(events...) {
+		for _, ev := range events {
+			pair := ev.Pair
+			tf := ev.Timeframe
 
-			symbol := evt[0].Symbol
-			timeframe := evt[0].Timeframe
+			// sort pairs, so we can list top preformers first
+			if _, ok := done[pair]; !ok {
+				done[pair] = true
+			} else {
+				continue
+			}
 
-			bars, ok := m[symbol+timeframe]
+			bars, ok := m[pair+tf]
 			if !ok {
 				continue
 			}
 
-			chart, err := c.MakeChart(symbol+timeframe, bars, evt)
+			chart, err := c.MakeChart(pair+tf, bars, pairEvents[pair])
 			if err != nil {
 				log.Println(err)
 			}
 
 			// append to slice
 			buf = append(buf, chart...)
+
 		}
+
+		// for _, evt := range history.MapEvents(events...) {
+
+		// 	symbol := evt[0].Pair
+		// 	timeframe := evt[0].Timeframe
+
+		// 	bars, ok := m[symbol+timeframe]
+		// 	if !ok {
+		// 		continue
+		// 	}
+
+		// 	chart, err := c.MakeChart(symbol+timeframe, bars, evt)
+		// 	if err != nil {
+		// 		log.Println(err)
+		// 	}
+
+		// 	// append to slice
+		// 	buf = append(buf, chart...)
+		// }
 
 	} else {
 

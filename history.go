@@ -1,3 +1,15 @@
+/*
+	----------------------------------------------
+	history.go is the main package of history repo
+	----------------------------------------------
+	Bars					ohlcv pair+timeframe data (bars/candlestick)
+	Tick					tickdata if enabled
+	Downloader Interface
+	C						pair+timeframe when we got new data
+	Portfolio 				backtesting
+												 .slk.prod.21
+*/
+
 package history
 
 import (
@@ -19,7 +31,7 @@ type History struct {
 	Bars   map[string]Bars
 	Tick   map[string]chan float64
 	update bool
-	// C notify channel when we got now bars for a history (symbol timeframe)
+	// C notify channel when we got now bars for a history (symbol)
 	C chan string
 	// Plug diffrent downloaders
 	Downloader
@@ -29,27 +41,27 @@ type History struct {
 
 // Downloader interface plugs functions that download bars
 type Downloader interface {
-	GetKlines(symbol, timeframe string, limit int) (Bars, error)
+	GetKlines(pair, timeframe string, limit int) (Bars, error)
 }
 
 // GetBars returns bars saftly
-func (h *History) GetBars(symbol, timeframe string) Bars {
+func (h *History) GetBars(pair, timeframe string) Bars {
 	h.RLock()
 	defer h.RUnlock()
 
-	if bars, ok := h.Bars[symbol+timeframe]; ok {
+	if bars, ok := h.Bars[pair+timeframe]; ok {
 		return bars
 	}
 
 	return Bars{}
 }
 
-// GetTick returns tick channel
-func (h *History) GetTick(symbol, timeframe string) (chan float64, error) {
+// GetTick returns tick channel              -
+func (h *History) GetTick(pair, timeframe string) (chan float64, error) {
 	h.RLock()
 	defer h.RUnlock()
 
-	if tc, ok := h.Tick[symbol+timeframe]; ok {
+	if tc, ok := h.Tick[pair+timeframe]; ok {
 		return tc, nil
 	}
 
@@ -159,7 +171,7 @@ func (h *History) Unload(symbol string) error {
 		delete(h.Bars, symbol)
 	}
 
-	fmt.Println("unloaded", symbol)
+	log.Println(symbol, "unloaded")
 	return nil
 }
 
@@ -232,16 +244,16 @@ func (h *History) Add(symbol string, bars Bars) error {
 	// update history
 	h.Bars[symbol] = merge(b, bars)
 
-	// unload if total bars to small
+	// delete if total bars to small
 	if 2 > len(h.Bars[symbol]) {
 		delete(h.Bars, symbol)
-		return errors.New("history to small")
+		return errors.New("history to short")
 	}
 
 	log.Println(symbol, msg)
 
 	// notify data.C that we have updated symbol (not when loading)
-	if len(b) > 0 {
+	if len(b) > 0 { // || msg == "loaded" {
 		select {
 		case h.C <- (symbol):
 		default:

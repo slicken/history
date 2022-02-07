@@ -2,6 +2,7 @@ package history
 
 import (
 	"math"
+	"strings"
 	"time"
 )
 
@@ -146,9 +147,9 @@ const (
 	w1  Timeframe = 10080
 )
 
-// TFi formats timeframe
-func TFi(tf string) Timeframe {
-	switch tf {
+// TF2Interval formats timeframe
+func TF2Interval(tf string) Timeframe {
+	switch strings.ToLower(tf) {
 	case "1m", "1M", "m1", "M1", "1":
 		return m1
 	case "3m", "3M", "m3", "M3", "3":
@@ -180,8 +181,8 @@ func TFi(tf string) Timeframe {
 	}
 }
 
-// TFs formats timeframe
-func TFs(tf Timeframe) string {
+// TF2String formats timeframe
+func TF2String(tf Timeframe) string {
 	switch tf {
 	case m1:
 		return "1m"

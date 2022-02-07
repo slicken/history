@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,10 +19,10 @@ import (
 type Binance struct{}
 
 // GetKlines new data from Binance exchange
-func (e Binance) GetKlines(symbol, timeframe string, limit int) (history.Bars, error) {
+func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error) {
 	path := fmt.Sprintf(
 		"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&limit=%v",
-		strings.ToUpper(symbol), strings.ToLower(timeframe), limit)
+		strings.ToUpper(pair), strings.ToLower(timeframe), limit)
 
 	req, _ := http.NewRequest("GET", path, nil)
 	req.Header.Add("Accept", "application/json")
@@ -84,17 +86,17 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 		return nil, err
 	}
 
-	// make symbol slice
+	// make pair slice
 	var result []string
-	for _, symbol := range ei.Symbols {
-		if symbol.QuoteAsset != currencie || symbol.Status != "TRADING" {
+	for _, pair := range ei.Symbols {
+		if pair.QuoteAsset != currencie || pair.Status != "TRADING" {
 			continue
 		}
 
 		// exclude list
 		ok := true
-		for _, x := range exclude {
-			if strings.Contains(symbol.QuoteAsset, x) || strings.Contains(symbol.BaseAsset, x) {
+		for _, x := range []string{"DOWN", "UP", "BULL", "BEAR", "AUD", "BUSD", "BIDR", "BKRW", "DAI", "EUR", "GBP", "IDRT", "NGN", "PAX", "RUB", "TUSD", "TRY", "UAH", "USDC", "ZAR", "BUSD", "SUSD", "USDP"} {
+			if strings.Contains(pair.QuoteAsset, x) || strings.Contains(pair.BaseAsset, x) {
 				ok = false
 			}
 
@@ -104,11 +106,17 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 		}
 
 		for _, tf := range timeframes {
-			result = append(result, symbol.Symbol+tf)
+			if !TFValid(tf) {
+				log.Println("unkown timeframe", tf)
+			}
+			result = append(result, pair.Symbol+tf)
 		}
 	}
-
 	return result, nil
+}
+
+func TFValid(tf string) bool {
+	return history.TF2String(history.TF2Interval(tf)) != ""
 }
 
 // ExchangeInfo holds the full exchange information type
@@ -162,4 +170,22 @@ func GetExchangeInfo() (ExchangeInfo, error) {
 
 	json.Unmarshal(b, &ei)
 	return ei, err
+}
+
+func SaveTradingViewFile() {
+	fmt.Println("usage: --list [quote] [timeframe] [days]")
+
+	buf := bytes.NewBuffer(nil)
+
+	res := []string{}
+	for v := range hist.Bars {
+		n := len(v)
+		res = append(res, v[:n-2]+",")
+	}
+
+	buf.WriteString(fmt.Sprintf("%v", res))
+	ioutil.WriteFile(conf.quote+".txt", buf.Bytes(), 0644)
+
+	log.Println("saved list.txt of top preformers on " + conf.quote)
+	os.Exit(0)
 }

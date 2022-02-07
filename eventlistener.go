@@ -16,30 +16,35 @@ type EventListener struct {
 // Start event listener
 func (e *EventListener) Start(hist *History, events *Events) {
 	e.running = true
+
 	log.Println("EVENTLISTENER started")
+
+	for symbol := range hist.Bars {
+		hist.C <- symbol
+	}
 
 	go func() {
 		for {
 
 			select {
-			case s, ok := <-hist.C:
+			case symbol, ok := <-hist.C:
 				if !ok || len(e.strategies) == 0 {
 					continue
 				}
-				symbol, timeframe := Split(s)
-				if symbol == "" || timeframe == "" {
+				pair, timeframe := Split(symbol)
+				if pair+timeframe == "" {
 					continue
 				}
 
 				// get bars and run strategies on them
-				bars := hist.Bars[s]
+				bars := hist.Bars[symbol]
 				for _, strat := range e.strategies {
 					if new, ok := strat.Event(bars); ok && !events.Exists(new) {
 
-						new.Symbol = symbol
+						new.Pair = pair
 						new.Timeframe = timeframe
 						*events = append(*events, new)
-						log.Printf("%s%s %s %s %.8f\n", symbol, timeframe, new.Type, new.Text, new.Price)
+						log.Printf("%s%s %s %s %.8f\n", new.Pair, new.Timeframe, EventTypes[new.Type], new.Text, new.Price)
 					}
 				}
 

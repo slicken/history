@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// Strategy interface using Bars type as Event condition
+type Strategy interface {
+	Event(Bars) (Event, bool)
+}
+
 // EventType ..
 type EventType int
 
@@ -13,8 +18,10 @@ const (
 	MARKET_SELL
 	LIMIT_BUY
 	LIMIT_SELL
+
 	CLOSE_BUY
 	CLOSE_SELL
+
 	MODIFY
 	NEWS
 	OTHER
@@ -34,7 +41,7 @@ var EventTypes = map[EventType]string{
 
 // Event data for specific time and price
 type Event struct {
-	Symbol    string
+	Pair      string
 	Timeframe string
 	Title     string
 	Text      string
@@ -50,6 +57,14 @@ func (e *Event) Add(typ EventType, title string, time time.Time, price float64) 
 	e.Title = title
 	e.Time = time
 	e.Price = price
+}
+
+// IsBuy
+func (e *Event) IsBuy() bool {
+	if e.Type == 0 || e.Type == 2 || e.Type == 4 {
+		return true
+	}
+	return false
 }
 
 // Events type
@@ -74,13 +89,53 @@ func (ev Events) Exists(e Event) bool {
 	return false
 }
 
+// GetLast ..
+func (ev Events) GetLast(symbol string) Event {
+	var e Events
+
+	for _, old := range ev {
+		if symbol == old.Pair+old.Timeframe {
+			e = append(e, old)
+		}
+	}
+
+	if len(e) == 0 {
+		return Event{}
+	}
+
+	return e[len(e)-1]
+}
+
+// Add event to events list
+func (ev *Events) Add(e Event) bool {
+	*ev = append(*ev, e)
+	return true
+}
+
+// Delete the event from events list
+func (ev *Events) Del(e Event) bool {
+	for i, v := range *ev {
+		if v == e {
+			*ev = append((*ev)[:i], (*ev)[i+1:]...)
+			return true
+		}
+	}
+
+	return false
+}
+
+// Remove event index in slice
+func (ev Events) RemoveIndex(index int) Events {
+	return append(ev[:index], ev[index+1:]...)
+}
+
 // Map events
 func (ev Events) Map() map[string]Events {
 	m := make(map[string]Events)
 
 	for _, e := range ev {
 		// describe key
-		key := e.Symbol
+		key := e.Pair
 		if key == "" {
 			key = "unknown"
 		}
@@ -90,6 +145,7 @@ func (ev Events) Map() map[string]Events {
 		}
 		m[key] = append(m[key], e)
 	}
+
 	return m
 }
 
@@ -99,7 +155,7 @@ func MapEvents(ev ...Event) map[string]Events {
 
 	for _, e := range ev {
 		// describe key
-		key := e.Symbol
+		key := e.Pair
 		if key == "" {
 			key = "unknown"
 		}
@@ -109,16 +165,17 @@ func MapEvents(ev ...Event) map[string]Events {
 		}
 		m[key] = append(m[key], e)
 	}
+
 	return m
 }
 
-// ListEvents ..
-func ListEvents(ev ...Event) Events {
-	var v Events
+// // ListEvents ..
+// func ListEvents(ev ...Event) Events {
+// 	var v Events
 
-	for _, e := range ev {
-		v = append(v, e)
-	}
+// 	for _, e := range ev {
+// 		v = append(v, e)
+// 	}
 
-	return v
-}
+// 	return v
+// }
