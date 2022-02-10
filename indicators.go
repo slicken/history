@@ -155,12 +155,6 @@ func WithinRange(src, dest, r float64) bool {
 	return math.Abs(src-dest) < r
 }
 
-// ClearStates ..
-type ClearStates struct {
-	hh, ll, hl, lh, price float64
-	state                 int
-}
-
 // IsEngulfBuy ..
 func (bars Bars) IsEngulfBuy() bool {
 	o0 := bars[0].Open
@@ -196,33 +190,33 @@ func CalcPercentage(n, total float64) float64 {
 
 // TD Sequential 9
 func (bars Bars) TD() int {
-	var upCount []int = make([]int, len(bars))
+	var uc []int = make([]int, len(bars))
 	var dc []int = make([]int, len(bars))
 	for i := len(bars) - 5; i >= 0; i-- {
 
 		isUp := bars[i].Close > bars[i+4].Close
 		isDn := bars[i].Close < bars[i+4].Close
 
-		// UPCOUNT
+		// UP COUNT
 		if isUp {
 			dc[i] = 0
-			if upCount[i+1] < 9 {
-				upCount[i] = upCount[i+1] + 1
+			if uc[i+1] < 9 {
+				uc[i] = uc[i+1] + 1
 			} else {
-				upCount[i] = 0
+				uc[i] = 0
 			}
 
 			// PERFECT BUY
-			if upCount[i] == 9 {
+			if uc[i] == 9 {
 				if bars[i+1].Low <= bars[i+3].Low || bars[i].Low <= bars[i+2].Low {
-					upCount[i] = 10
+					uc[i] = 10
 				}
 			}
 		}
 
-		// DOWNCOUNT
+		// DOWN COUNT
 		if isDn {
-			upCount[i] = 0
+			uc[i] = 0
 			if dc[i+1] < 9 {
 				dc[i] = dc[i+1] + 1
 			} else {
@@ -236,13 +230,11 @@ func (bars Bars) TD() int {
 				}
 			}
 		}
-
-		// debug: 	fmt.Printf("isUp\t%v \tupCount\t%d \t\tisDn\t%v \t dc\t%d\t \n", isUp, upCount[i], isDn, dc[i])
 	}
-	if upCount[0] == 9 {
+	if uc[0] == 9 {
 		return 1
 	}
-	if upCount[0] == 10 { // PERFECT SELL
+	if uc[0] == 10 { // PERFECT SELL
 		return 2
 	}
 	if dc[0] == 9 {

@@ -1,12 +1,16 @@
 /*
-	----------------------------------------------
+	------------------------------------------------------------------------------
 	history.go is the main package of history repo
-	----------------------------------------------
-	Bars					ohlcv pair+timeframe data (bars/candlestick)
-	Tick					tickdata if enabled
-	Downloader Interface
-	C						pair+timeframe when we got new data
-	Portfolio 				backtesting
+	------------------------------------------------------------------------------
+	History 				main struct holds all history data with settings
+	EventListener 			is loaded with strategies and is looking at History (for real time strategies)
+	Portfolio 				for tracking gains when backtesting
+
+	History.Bars[symbol]	contains tohlcv (time,open,high,low,close,volume)
+	History.Tick[symbol]	tickdata from ws::    								!! NOT IMPLANMENTED !!
+	History.Update(true)	if you want to keep it running looking for new bars
+	History.Downloader 		Interface where you connect you exchange downloads spitting out Bars
+	History.C				notify when symbol (pair+timeframe) get new data (bars)
 												 .slk.prod.21
 */
 
@@ -56,7 +60,7 @@ func (h *History) GetBars(pair, timeframe string) Bars {
 	return Bars{}
 }
 
-// GetTick returns tick channel              -
+// GetTick returns tick channel
 func (h *History) GetTick(pair, timeframe string) (chan float64, error) {
 	h.RLock()
 	defer h.RUnlock()
@@ -160,7 +164,7 @@ func (h *History) Unload(symbol string) error {
 
 	sym, tf := Split(symbol)
 	if tf == "" {
-		// delete all timeframes of symbol if missing
+		// delete all timeframes of pair if symbol if missing timeframe
 		for v := range h.Bars {
 			s, _ := Split(v)
 			if s == sym {
@@ -212,7 +216,7 @@ func (h *History) Add(symbol string, bars Bars) error {
 
 	b, ok := h.Bars[symbol]
 	if !ok {
-		msg = "loaded"
+		msg = "loading"
 
 		h.Bars[symbol] = bars
 		// increase cap by +1
@@ -232,7 +236,6 @@ func (h *History) Add(symbol string, bars Bars) error {
 	} else {
 		// save bars
 		msg = fmt.Sprintf("added %d bars", len(bars))
-
 		if err := SaveBars(symbol, bars); err != nil {
 			log.Printf("could not save %s bars: %v\n", symbol, err)
 		}
@@ -252,12 +255,10 @@ func (h *History) Add(symbol string, bars Bars) error {
 
 	log.Println(symbol, msg)
 
-	// notify data.C that we have updated symbol (not when loading)
-	if len(b) > 0 { // || msg == "loaded" {
-		select {
-		case h.C <- (symbol):
-		default:
-		}
+	// notify data.C that we have bars
+	select {
+	case h.C <- (symbol):
+	default:
 	}
 
 	return nil
@@ -285,7 +286,7 @@ func (h *History) Update(enabled bool) {
 			for symbol := range h.Bars {
 				limit := maxlimit
 
-				// check how many new bars there is from last bars time
+				// calc how many new bars we can download from our last bar
 				if len(h.Bars[symbol]) > 0 {
 					limit = calcLimit(h.Bars[symbol].LastBar().T(), h.Bars[symbol].Period())
 					if limit > maxlimit {
@@ -321,32 +322,26 @@ func (h *History) getSeries(symbol string, limit int, wg *sync.WaitGroup) error 
 
 	var err error
 	var bars Bars
-	tries := 0
-	// try download new bars
-	for tries < maxtries {
-		bars, err = h.GetKlines(sym, tf, limit)
-		if err != nil {
-			tries++
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		// since we always "gets" the current bar witch is not finish, we dont want to save that
-		if 2 > len(bars) {
-			return nil
-		}
-		// check if lastbar time is valid. if not, unload
-		if time.Now().Add(2 * -bars.Period()).After(bars[0].T()) {
-			h.Lock()
-			delete(h.Bars, symbol)
-			h.Unlock()
-			log.Println(symbol, "outdated")
-			return nil
-		}
-		// add to history
-		h.Add(symbol, bars[1:])
+
+	bars, err = h.GetKlines(sym, tf, limit)
+	if err != nil {
+		log.Printf("failed to download %d bars for %s: %v\n", limit, symbol, err)
+		time.Sleep(2 * time.Minute)
+		return err
+	}
+	// since we always get the current bar witch is not finish, we dont want to save that
+	if 2 > len(bars) {
 		return nil
 	}
-
-	log.Printf("failed to download %d bars for %s: %v\n", limit, symbol, err)
-	return err
+	// check if lastbar time is fresh, if not then delete symbol
+	if time.Now().Add(2 * -bars.Period()).After(bars.LastBar().T()) {
+		h.Lock()
+		delete(h.Bars, symbol)
+		h.Unlock()
+		log.Println(symbol, "outdated")
+		return nil
+	}
+	// add to history
+	h.Add(symbol, bars[1:])
+	return nil
 }

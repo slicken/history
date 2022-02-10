@@ -12,18 +12,12 @@ import (
 
 var (
 	maxlimit = 1000
-	maxtries = 3
 	datadir  = "data"
 )
 
 // Setmaxlimit limits new data request
 func (h *History) SetMaxLimit(v int) {
 	maxlimit = v
-}
-
-// Setmaxtries when download fails
-func (h *History) SetMaxTries(v int) {
-	maxtries = v
 }
 
 // Setdatadir to store files in

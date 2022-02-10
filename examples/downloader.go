@@ -32,22 +32,18 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 	defer resp.Body.Close()
 	b, _ := ioutil.ReadAll(resp.Body)
 
-	return Process(&b)
-}
+	// fmt.Printf("___________________resp.Body___%s %s_limit=%d____________________________\n%s\n", pair, timeframe, limit, string(b))
 
-// Process downloaded data to Bars slice
-func Process(data *[]byte) (history.Bars, error) {
-	var err error
-	js := [][]interface{}{}
-	if err = json.Unmarshal(*data, &js); err != nil {
+	// convert OHLC data to into history.Bars
+	tmp := [][]interface{}{}
+	if err := json.Unmarshal(b, &tmp); err != nil {
 		return nil, err
 	}
 
-	// process OHLC data to into Bar struct
-	var list = make(history.Bars, 0)
-	for i, v := range js {
-
+	var bars = make(history.Bars, 0)
+	for i, v := range tmp {
 		bar := history.Bar{}
+
 		bar.Time = time.Unix(int64(v[0].(float64))/1000, 0) // .UTC()
 		bar.Open, err = strconv.ParseFloat(v[1].(string), 64)
 		if err != nil {
@@ -70,10 +66,10 @@ func Process(data *[]byte) (history.Bars, error) {
 			log.Printf("error bars[%d].Volume\n", i)
 		}
 		// insert
-		list = append(history.Bars{bar}, list...)
+		bars = append(history.Bars{bar}, bars...)
 	}
 
-	return list, nil
+	return bars, nil
 }
 
 // MakeSymbolMultiTimeframe helper func for binance that makes slice of requested symbols and timeframes

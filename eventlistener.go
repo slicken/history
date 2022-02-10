@@ -19,10 +19,6 @@ func (e *EventListener) Start(hist *History, events *Events) {
 
 	log.Println("EVENTLISTENER started")
 
-	for symbol := range hist.Bars {
-		hist.C <- symbol
-	}
-
 	go func() {
 		for {
 
@@ -49,11 +45,11 @@ func (e *EventListener) Start(hist *History, events *Events) {
 				}
 
 			default:
-				if e.running == false {
+				if !e.running {
 					log.Println("EVENTLISTENER stopped")
 					return
 				}
-				time.Sleep(time.Second) // remove for faster action to event channel
+				time.Sleep(time.Second)
 			}
 		}
 	}()
