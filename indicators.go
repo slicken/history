@@ -5,24 +5,24 @@ import (
 )
 
 // SMA on bars
-func (bars Bars) SMA(mode PriceMode) float64 {
+func (bars Bars) SMA(mode Price) float64 {
 	var sum float64
 
 	for _, b := range bars {
-		sum += b.Price(mode)
+		sum += b.Mode(mode)
 	}
 
 	return sum / float64(len(bars))
 }
 
 // LWMA on bars
-func (bars Bars) LWMA(mode PriceMode) float64 {
+func (bars Bars) LWMA(mode Price) float64 {
 	var period = len(bars)
 	var sum, weight float64
 
 	for i := period - 1; i >= 0; i-- {
 		weight += float64(period - i)
-		sum += bars[i].Price(mode) * float64(period-i)
+		sum += bars[i].Mode(mode) * float64(period-i)
 	}
 
 	if weight > 0 {
@@ -33,7 +33,7 @@ func (bars Bars) LWMA(mode PriceMode) float64 {
 }
 
 // EMA on bars
-func (bars Bars) EMA(mode PriceMode) float64 {
+func (bars Bars) EMA(mode Price) float64 {
 	period := len(bars)
 	var last, k, sum float64
 
@@ -41,7 +41,7 @@ func (bars Bars) EMA(mode PriceMode) float64 {
 	sum = bars.SMA(mode)
 	for i := period - 1; i >= 0; i-- {
 		last = sum
-		sum = bars[i].Price(mode)*k + last*(1-k)
+		sum = bars[i].Mode(mode)*k + last*(1-k)
 	}
 
 	return sum
@@ -58,8 +58,8 @@ func (bars Bars) ATR() float64 {
 	return sum / float64(len(bars))
 }
 
-// StDev ..
-func (bars Bars) StDev(mode PriceMode) float64 {
+// Standard Deviation
+func (bars Bars) StDev(mode Price) float64 {
 	var v float64
 	sma := bars.SMA(mode)
 
@@ -77,11 +77,11 @@ func (bars Bars) Range() float64 {
 }
 
 // Highest ..
-func (bars Bars) Highest(mode PriceMode) float64 {
+func (bars Bars) Highest(mode Price) float64 {
 	highest := -1.
 	for _, b := range bars {
-		if highest == -1. || b.Price(mode) > highest {
-			highest = b.Price(mode)
+		if highest == -1. || b.Mode(mode) > highest {
+			highest = b.Mode(mode)
 		}
 	}
 
@@ -89,12 +89,12 @@ func (bars Bars) Highest(mode PriceMode) float64 {
 }
 
 // HighestIdx ..
-func (bars Bars) HighestIdx(mode PriceMode) int {
+func (bars Bars) HighestIdx(mode Price) int {
 	index := -1
 	highest := -1.
 	for i, b := range bars {
-		if highest == -1. || b.Price(mode) > highest {
-			highest = b.Price(mode)
+		if highest == -1. || b.Mode(mode) > highest {
+			highest = b.Mode(mode)
 			index = i
 		}
 	}
@@ -103,11 +103,11 @@ func (bars Bars) HighestIdx(mode PriceMode) int {
 }
 
 // Lowest ..
-func (bars Bars) Lowest(mode PriceMode) float64 {
+func (bars Bars) Lowest(mode Price) float64 {
 	lowest := -1.
 	for _, b := range bars {
-		if lowest == -1. || b.Price(mode) < lowest {
-			lowest = b.Price(mode)
+		if lowest == -1. || b.Mode(mode) < lowest {
+			lowest = b.Mode(mode)
 		}
 	}
 
@@ -115,12 +115,12 @@ func (bars Bars) Lowest(mode PriceMode) float64 {
 }
 
 // LowestIdx ..
-func (bars Bars) LowestIdx(mode PriceMode) int {
+func (bars Bars) LowestIdx(mode Price) int {
 	index := -1
 	lowest := -1.
 	for i, b := range bars {
-		if lowest == -1. || b.Price(mode) < lowest {
-			lowest = b.Price(mode)
+		if lowest == -1. || b.Mode(mode) < lowest {
+			lowest = b.Mode(mode)
 			index = i
 		}
 	}
@@ -139,7 +139,7 @@ func (bars Bars) LastBullIdx() int {
 	return -1
 }
 
-// LastBearIdx ..
+// LastBearIdx
 func (bars Bars) LastBearIdx() int {
 	for i, b := range bars {
 		if b.Bear() {
@@ -150,12 +150,17 @@ func (bars Bars) LastBearIdx() int {
 	return -1
 }
 
-// WithinRange ..
+// WithinRange
 func WithinRange(src, dest, r float64) bool {
 	return math.Abs(src-dest) < r
 }
 
-// IsEngulfBuy ..
+// CalcuPercentage
+func CalcPercentage(n, total float64) float64 {
+	return 100 * (n / total)
+}
+
+// IsEngulfBuy
 func (bars Bars) IsEngulfBuy() bool {
 	o0 := bars[0].Open
 	o1 := bars[1].Open
@@ -169,7 +174,7 @@ func (bars Bars) IsEngulfBuy() bool {
 	return false
 }
 
-// IsEngulfSell ..
+// IsEngulfSell
 func (bars Bars) IsEngulfSell() bool {
 	o0 := bars[0].Open
 	o1 := bars[1].Open
@@ -181,11 +186,6 @@ func (bars Bars) IsEngulfSell() bool {
 		return true
 	}
 	return false
-}
-
-// CalcuPercentage ..
-func CalcPercentage(n, total float64) float64 {
-	return 100 * (n / total)
 }
 
 // TD Sequential 9
@@ -247,7 +247,7 @@ func (bars Bars) TD() int {
 	return 0
 }
 
-// // FractalHighIdx ..
+// // FractalHighIdx
 // func (bars Bars) FractalHighIdx(per int) int {
 // 	for i, _ := range bars[:len(bars)-per] {
 // 		sh := i - per
@@ -259,7 +259,7 @@ func (bars Bars) TD() int {
 // 	return -1
 // }
 
-// // FractalLowIdx ..
+// // FractalLowIdx
 // func (bars Bars) FractalLowIdx(per int) int {
 // 	for i, _ := range bars[:len(bars)-per] {
 // 		sh := i - per

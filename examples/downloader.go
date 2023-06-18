@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -30,18 +30,16 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 		return nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := ioutil.ReadAll(resp.Body)
-
-	// fmt.Printf("___________________resp.Body___%s %s_limit=%d____________________________\n%s\n", pair, timeframe, limit, string(b))
+	bytes, _ := io.ReadAll(resp.Body)
 
 	// convert OHLC data to into history.Bars
-	tmp := [][]interface{}{}
-	if err := json.Unmarshal(b, &tmp); err != nil {
+	raw := [][]interface{}{}
+	if err := json.Unmarshal(bytes, &raw); err != nil {
 		return nil, err
 	}
 
 	var bars = make(history.Bars, 0)
-	for i, v := range tmp {
+	for i, v := range raw {
 		bar := history.Bar{}
 
 		bar.Time = time.Unix(int64(v[0].(float64))/1000, 0) // .UTC()
@@ -100,17 +98,13 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 		}
 
 		for _, tf := range timeframes {
-			if !TFValid(tf) {
+			if !history.TFIsValid(tf) {
 				log.Println("unkown timeframe", tf)
 			}
 			result = append(result, pair.Symbol+tf)
 		}
 	}
 	return result, nil
-}
-
-func TFValid(tf string) bool {
-	return history.TF2String(history.TF2Interval(tf)) != ""
 }
 
 // ExchangeInfo holds the full exchange information type
@@ -160,7 +154,7 @@ func GetExchangeInfo() (ExchangeInfo, error) {
 		return ei, err
 	}
 	defer resp.Body.Close()
-	b, _ := ioutil.ReadAll(resp.Body)
+	b, _ := io.ReadAll(resp.Body)
 
 	json.Unmarshal(b, &ei)
 	return ei, err

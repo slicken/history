@@ -1,17 +1,35 @@
 /*
-	------------------------------------------------------------------------------
+	-------------------------------------------------------------------------------------------
 	history.go is the main package of history repo
-	------------------------------------------------------------------------------
-	History 				main struct holds all history data with settings
-	EventListener 			is loaded with strategies and is looking at History (for real time strategies)
-	Portfolio 				for tracking gains when backtesting
+	-------------------------------------------------------------------------------------------
+	History 						main struct holds all history data (bars) with settings
+	EventListener 					is loaded with strategies and is looking at History (for real time strategies)
+	Portfolio 						for tracking gains when backtesting
 
-	History.Bars[symbol]	contains tohlcv (time,open,high,low,close,volume)
-	History.Tick[symbol]	tickdata from ws::    								!! NOT IMPLANMENTED !!
-	History.Update(true)	if you want to keep it running looking for new bars
-	History.Downloader 		Interface where you connect you exchange downloads spitting out Bars
-	History.C				notify when symbol (pair+timeframe) get new data (bars)
-												 .slk.prod.21
+	History.bars[symbol]Bars		Bars = []Bar
+	History.Tick[symbol]float64		interface for Tickdata from ws::
+	History.Update(true)			if true, it will update if new bars
+	History.Downloader 				Interface where you connect you downloader and stores Bars data
+	History.C						notify when symbol (pair+timeframe) get new data (bars)
+
+	Important things to be aware of
+	Tf		 	= Timeframe
+	Pair		= quote asset + base asset
+	Symbol		= Pair + Tf
+	---
+	Check '/examples/main.go' how to use package and examples
+
+	'''hist := new(history.History)'''
+	If you want to use your own download function create a function named
+	'''type Binance struct{}
+       func (e Binance) DLBars(sym, tf string, limit int) (history.Bars, error)'''
+	connect the download function
+	'''hist.Downloader = &Downloader{}'''
+	Update if new bars automaticly
+	'''hist.Update(true)'''
+	Get some symbols bars data in reverse
+	'''hist.Get(symbol).Reverse()'''
+
 */
 
 package history
@@ -24,16 +42,9 @@ import (
 	"time"
 )
 
-var (
-	errNoHist   = errors.New("no history")
-	errNoBars   = errors.New("no bars")
-	errNotFound = errors.New("not found")
-)
-
 // History maintaner
 type History struct {
-	Bars   map[string]Bars
-	Tick   map[string]chan float64
+	bars   map[string]Bars
 	update bool
 	// C notify channel when we got now bars for a history (symbol)
 	C chan string
@@ -48,28 +59,22 @@ type Downloader interface {
 	GetKlines(pair, timeframe string, limit int) (Bars, error)
 }
 
-// GetBars returns bars saftly
-func (h *History) GetBars(pair, timeframe string) Bars {
+// Bars returns bars saftly
+func (h *History) Bars(symbol string) Bars {
 	h.RLock()
 	defer h.RUnlock()
 
-	if bars, ok := h.Bars[pair+timeframe]; ok {
-		return bars
+	bars, ok := h.bars[symbol]
+	if !ok {
+		return Bars{}
 	}
 
-	return Bars{}
+	return bars
 }
 
-// GetTick returns tick channel
-func (h *History) GetTick(pair, timeframe string) (chan float64, error) {
-	h.RLock()
-	defer h.RUnlock()
-
-	if tc, ok := h.Tick[pair+timeframe]; ok {
-		return tc, nil
-	}
-
-	return nil, errors.New("not found")
+// Returns a map of all bars
+func (h *History) Map() map[string]Bars {
+	return h.bars
 }
 
 // MinPeriod returns minimum period of historys
@@ -78,7 +83,7 @@ func (h *History) MinPeriod() time.Duration {
 	defer h.RUnlock()
 
 	var min = mindur
-	for _, bars := range h.Bars {
+	for _, bars := range h.bars {
 		period := bars.Period()
 		if min == mindur || period < min {
 			min = period
@@ -88,13 +93,13 @@ func (h *History) MinPeriod() time.Duration {
 	return min
 }
 
-// FirstTime returns minimum period of historys
+// FirstTime returns first time in all historys
 func (h *History) FirstTime() time.Time {
 	h.RLock()
 	defer h.RUnlock()
 
 	var v = time.Time{}
-	for _, bars := range h.Bars {
+	for _, bars := range h.bars {
 
 		t := bars.FirstBar().T()
 		if v.IsZero() || t.Before(v) {
@@ -105,13 +110,13 @@ func (h *History) FirstTime() time.Time {
 	return v
 }
 
-// LastTime returns minimum period of historys
+// LastTime returns latest time in all historys
 func (h *History) LastTime() time.Time {
 	h.RLock()
 	defer h.RUnlock()
 
 	var v time.Time
-	for _, bars := range h.Bars {
+	for _, bars := range h.bars {
 
 		t := bars.LastBar().T()
 		if v.IsZero() || t.After(v) {
@@ -127,29 +132,31 @@ func (h *History) Limit(length int) *History {
 	h.Lock()
 	defer h.Unlock()
 
-	for symbol := range h.Bars {
-		if length >= len(h.Bars[symbol]) {
+	for symbol := range h.bars {
+		if length >= len(h.bars[symbol]) {
 			continue
 		}
-		h.Bars[symbol] = h.Bars[symbol][:length]
+		h.bars[symbol] = h.bars[symbol][:length]
 	}
 
 	return h
 }
 
-// TimeSpan returns all historys for given start to end time
-func (h *History) TimeSpan(start, end time.Time) *History {
+// LimitDT the data for specified data time intervalls
+func (h *History) LimitDT(start, end time.Time) *History {
+	h.Lock()
+	defer h.Unlock()
 	var wg sync.WaitGroup
 
-	for symbol := range h.Bars {
+	for symbol := range h.bars {
 
 		wg.Add(1)
 		go func(sym string, wg *sync.WaitGroup) {
 			defer wg.Done()
 
-			h.Lock()
-			h.Bars[sym] = h.Bars[sym].TimeSpan(start, end)
-			h.Unlock()
+			// h.Lock()
+			h.bars[sym] = h.bars[sym].TimeSpan(start, end)
+			// h.Unlock()
 		}(symbol, &wg)
 	}
 
@@ -157,22 +164,22 @@ func (h *History) TimeSpan(start, end time.Time) *History {
 	return h
 }
 
-// Unload removes a history from data struct gracefully
+// Unload removes symbol bars from data struct gracefully
 func (h *History) Unload(symbol string) error {
 	h.Lock()
 	defer h.Unlock()
 
-	sym, tf := Split(symbol)
+	sym, tf := SplitPairTf(symbol)
 	if tf == "" {
 		// delete all timeframes of pair if symbol if missing timeframe
-		for v := range h.Bars {
-			s, _ := Split(v)
+		for v := range h.bars {
+			s, _ := SplitPairTf(v)
 			if s == sym {
-				delete(h.Bars, v)
+				delete(h.bars, v)
 			}
 		}
 	} else {
-		delete(h.Bars, symbol)
+		delete(h.bars, symbol)
 	}
 
 	log.Println(symbol, "unloaded")
@@ -184,7 +191,7 @@ func (h *History) Load(symbols ...string) error {
 	var wg sync.WaitGroup
 
 	for _, s := range symbols {
-		if sym, tf := Split(s); sym == "" || tf == "" {
+		if sym, tf := SplitPairTf(s); sym == "" || tf == "" {
 			log.Printf("could not split %s. got symbol=%s timeframe=%s\n", s, sym, tf)
 			continue
 		}
@@ -210,21 +217,21 @@ func (h *History) Add(symbol string, bars Bars) error {
 
 	var msg string
 
-	if len(h.Bars) == 0 {
-		h.Bars = make(map[string]Bars, 0)
+	if len(h.bars) == 0 {
+		h.bars = make(map[string]Bars, 0)
 	}
 
-	b, ok := h.Bars[symbol]
+	b, ok := h.bars[symbol]
 	if !ok {
 		msg = "loading"
 
-		h.Bars[symbol] = bars
+		h.bars[symbol] = bars
 		// increase cap by +1
-		c := make(chan string, len(h.Bars))
+		c := make(chan string, len(h.bars))
 		// copy values to new channel
 		for len(h.C) > 0 {
 			select {
-			case v, _ := <-h.C:
+			case v := <-h.C:
 				c <- v
 			default:
 			}
@@ -232,11 +239,11 @@ func (h *History) Add(symbol string, bars Bars) error {
 		h.C = c
 	} else if len(b) == len(bars) && b.LastBar() == bars.LastBar() {
 		// nothing new
-		return errors.New("nothing new")
+		return errors.New("no new bars")
 	} else {
 		// save bars
 		msg = fmt.Sprintf("added %d bars", len(bars))
-		if err := SaveBars(symbol, bars); err != nil {
+		if err := WriteBars(symbol, bars); err != nil {
 			log.Printf("could not save %s bars: %v\n", symbol, err)
 		}
 	}
@@ -245,11 +252,11 @@ func (h *History) Add(symbol string, bars Bars) error {
 	}
 
 	// update history
-	h.Bars[symbol] = merge(b, bars)
+	h.bars[symbol] = merge(b, bars)
 
-	// delete if total bars to small
-	if 2 > len(h.Bars[symbol]) {
-		delete(h.Bars, symbol)
+	// delete if total bars is less then two
+	if 2 > len(h.bars[symbol]) {
+		delete(h.bars, symbol)
 		return errors.New("history to short")
 	}
 
@@ -264,7 +271,8 @@ func (h *History) Add(symbol string, bars Bars) error {
 	return nil
 }
 
-// Update enables/disables new data updates
+// Update enables or disables new bars data
+// this will also remove outdated historys from struct but not from file
 func (h *History) Update(enabled bool) {
 	h.Lock()
 	h.update = enabled
@@ -283,12 +291,12 @@ func (h *History) Update(enabled bool) {
 
 			h.RLock()
 			var wg sync.WaitGroup
-			for symbol := range h.Bars {
+			for symbol := range h.bars {
 				limit := maxlimit
 
 				// calc how many new bars we can download from our last bar
-				if len(h.Bars[symbol]) > 0 {
-					limit = calcLimit(h.Bars[symbol].LastBar().T(), h.Bars[symbol].Period())
+				if len(h.bars[symbol]) > 0 {
+					limit = calcLimit(h.bars[symbol].LastBar().T(), h.bars[symbol].Period())
 					if limit > maxlimit {
 						limit = maxlimit
 					}
@@ -296,7 +304,7 @@ func (h *History) Update(enabled bool) {
 
 				if limit > 1 {
 					wg.Add(1)
-					go h.getSeries(symbol, limit, &wg)
+					go h.download(symbol, limit, &wg)
 				}
 			}
 			h.RUnlock()
@@ -314,11 +322,11 @@ func (h *History) Update(enabled bool) {
 	}
 }
 
-// getSeries downloads and updates history
-func (h *History) getSeries(symbol string, limit int, wg *sync.WaitGroup) error {
+// download and check validity before adding to history
+func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 	defer wg.Done()
 
-	sym, tf := Split(symbol)
+	sym, tf := SplitPairTf(symbol)
 
 	var err error
 	var bars Bars
@@ -333,10 +341,10 @@ func (h *History) getSeries(symbol string, limit int, wg *sync.WaitGroup) error 
 	if 2 > len(bars) {
 		return nil
 	}
-	// check if lastbar time is fresh, if not then delete symbol
+	// check if lastbar time is fresh, if not then delete symbol from history (not file)
 	if time.Now().Add(2 * -bars.Period()).After(bars.LastBar().T()) {
 		h.Lock()
-		delete(h.Bars, symbol)
+		delete(h.bars, symbol)
 		h.Unlock()
 		log.Println(symbol, "outdated")
 		return nil

@@ -7,7 +7,8 @@ import (
 
 const (
 	mindur = time.Duration(1 * time.Minute)
-	maxdur = time.Duration(43829 * time.Minute)
+	// maxdur = time.Duration(43829 * time.Minute)
+	maxdur = time.Duration(70560 * time.Minute)
 )
 
 // Bars type holds all functions for bars
@@ -20,6 +21,16 @@ func (bars Bars) Sort() Bars {
 	})
 
 	return bars
+}
+
+// Returns bars in reverse list
+func (bars Bars) Reverse() Bars {
+	length := len(bars)
+	rev := make(Bars, length)
+	for i, j := 0, length-1; i < length; i, j = i+1, j-1 {
+		rev[i] = bars[j]
+	}
+	return rev
 }
 
 // Period returns the calculated timeframe interval,
@@ -50,17 +61,17 @@ func (bars Bars) LastBar() Bar {
 	return bars[0]
 }
 
-// Find returns bars for given time
-func (bars Bars) Find(t time.Time) (n int, bar Bar) {
+// Find Bar for given time
+func (bars Bars) Find(dt time.Time) (n int, bar Bar) {
 	if 1 > len(bars) {
 		return -1, Bar{}
 	}
-	if bars.FirstBar().T().After(t) || bars.LastBar().T().Before(t) {
+	if bars.FirstBar().T().After(dt) || bars.LastBar().T().Before(dt) {
 		return -1, Bar{}
 	}
 
 	for i, b := range bars {
-		if b.T() == t {
+		if b.T() == dt {
 			return i, b
 		}
 	}
@@ -88,12 +99,12 @@ func merge(old, new Bars) Bars {
 		return new
 	}
 
-	ft := old.FirstBar().T()
-	lt := old.LastBar().T()
+	first := old.FirstBar().T()
+	last := old.LastBar().T()
 
 	merged := old
 	for _, b := range new {
-		if b.T().After(lt) || b.T().Before(ft) {
+		if b.T().After(last) || b.T().Before(first) {
 			merged = append(merged, b)
 		}
 	}

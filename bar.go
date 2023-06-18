@@ -1,89 +1,66 @@
 package history
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// Bar ..
+// Bar
 type Bar struct {
-	Time   time.Time
-	Open   float64
-	High   float64
-	Low    float64
-	Close  float64
-	Volume float64
+	Time   time.Time `json:"time"`
+	Open   float64   `json:"open"`
+	High   float64   `json:"high"`
+	Low    float64   `json:"low"`
+	Close  float64   `json:"close"`
+	Volume float64   `json:"volume,omitempty"`
 }
 
-// MarshalJSON compatible with json.Marshaler interface
-// func (b *Bar) MarshalJSON() ([]byte, error) {
-// 	return json.Marshal(
-// 		&struct {
-// 			Time   time.Time `json:"time"`
-// 			Open   float64   `json:"open"`
-// 			High   float64   `json:"high"`
-// 			Low    float64   `json:"low"`
-// 			Close  float64   `json:"close"`
-// 			Volume float64   `json:"volume"`
-// 		}{
-// 			Time:   b.Time,
-// 			Open:   b.Open,
-// 			High:   b.High,
-// 			Low:    b.Low,
-// 			Close:  b.Close,
-// 			Volume: b.Volume,
-// 		},
-// 	)
-// }
+func (b Bar) MarshalJSON() ([]byte, error) {
+	m := map[string]interface{}{
+		"Time":   b.Time.Unix(),
+		"Open":   b.Open,
+		"High":   b.High,
+		"Low":    b.Low,
+		"Close":  b.Close,
+		"Volume": b.Volume,
+	}
 
-// // UnmarshalJSON compatible with json.Unmarshaler interface
-// func (b *Bar) UnmarshalJSON(data []byte) error {
-// 	o := struct {
-// 		Time   int64  `json:"openTime"`
-// 		Open   string `json:"open"`
-// 		High   string `json:"high"`
-// 		Low    string `json:"low"`
-// 		Close  string `json:"close"`
-// 		Volume string `json:"volume"`
-// 	}{}
-// 	// o := struct {
-// 	// 	OpenTime                 int64  `json:"openTime"`
-// 	// 	Open                     string `json:"open"`
-// 	// 	High                     string `json:"high"`
-// 	// 	Low                      string `json:"low"`
-// 	// 	Close                    string `json:"close"`
-// 	// 	Volume                   string `json:"volume"`
-// 	// 	CloseTime                int64  `json:"closeTime"`
-// 	// 	QuoteAssetVolume         string `json:"quoteAssetVolume"`
-// 	// 	TradeNum                 int64  `json:"tradeNum"`
-// 	// 	TakerBuyBaseAssetVolume  string `json:"takerBuyBaseAssetVolume"`
-// 	// 	TakerBuyQuoteAssetVolume string `json:"takerBuyQuoteAssetVolume"`
-// 	// }{}
+	return json.Marshal(m)
+}
 
-// 	if err := json.Unmarshal(data, &o); err != nil {
-// 		return err
-// 	}
+func (b *Bar) UnmarshalJSON(data []byte) error {
+	var err error
+	m := make(map[string]interface{})
+	if err = json.Unmarshal(data, &m); err != nil {
+		return err
+	}
 
-// 	b.Time = time.Unix(o.Time, 0).UTC()
-// 	b.Open, _ = strconv.ParseFloat(o.Open, 64)
-// 	b.High, _ = strconv.ParseFloat(o.High, 64)
-// 	b.Low, _ = strconv.ParseFloat(o.Low, 64)
-// 	b.Close, _ = strconv.ParseFloat(o.Close, 64)
-// 	b.Volume, _ = strconv.ParseFloat(o.Volume, 64)
+	b.Time = time.Unix(int64(m["Time"].(float64)), 0)
+	if b.Open, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Open"]), 64); err != nil {
+		return err
+	}
+	if b.High, err = strconv.ParseFloat(fmt.Sprintf("%v", m["High"]), 64); err != nil {
+		return err
+	}
+	if b.Low, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Low"]), 64); err != nil {
+		return err
+	}
+	if b.Close, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Close"]), 64); err != nil {
+		return err
+	}
+	if b.Volume, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Volume"]), 64); err != nil {
+		return err
+	}
 
-// 	// b.Time = o.Time
-// 	// b.Open = o.Open
-// 	// b.High = o.High
-// 	// b.Low = o.Low
-// 	// b.Close = o.Close
-// 	// b.Volume = o.Volume
+	return err
+}
 
-// 	return nil
-// }
-
-// Price ..
-func (b Bar) Price(mode PriceMode) float64 {
+// Price Mode
+func (b Bar) Mode(mode Price) float64 {
 	switch mode {
 	case O:
 		return b.Open
@@ -106,12 +83,12 @@ func (b Bar) Price(mode PriceMode) float64 {
 	}
 }
 
-// PriceMode ..
-type PriceMode int
+// Price Mode
+type Price int
 
 const (
 	// O price open
-	O PriceMode = iota
+	O Price = iota
 	// H price open
 	H
 	// L price high
@@ -128,7 +105,7 @@ const (
 	V
 )
 
-// Timeframe ..
+// Timeframe
 type Timeframe int
 
 const (
@@ -145,10 +122,11 @@ const (
 	d1  Timeframe = 1440
 	d3  Timeframe = 4320
 	w1  Timeframe = 10080
+	M   Timeframe = 70560
 )
 
-// TF2Interval formats timeframe
-func TF2Interval(tf string) Timeframe {
+// TFInterval formats timeframe
+func TFInterval(tf string) Timeframe {
 	switch strings.ToLower(tf) {
 	case "1m", "1M", "m1", "M1", "1":
 		return m1
@@ -160,7 +138,7 @@ func TF2Interval(tf string) Timeframe {
 		return m15
 	case "30m", "30M", "m30", "M30", "30":
 		return m30
-	case "1h", "1H", "h1", "H1", "60": //"h", "H",
+	case "1h", "1H", "h1", "H1", "h", "H", "60":
 		return h1
 	case "4h", "4H", "h4", "H4", "240":
 		return h4
@@ -170,19 +148,21 @@ func TF2Interval(tf string) Timeframe {
 		return h8
 	case "12h", "12H", "h12", "H12", "960":
 		return h12
-	case "1d", "1D", "d1", "D1", "1440": //"d", "D",
+	case "1d", "1D", "d1", "D1", "d", "D", "1440":
 		return d1
 	case "3d", "3D", "d3", "D3", "4320":
 		return d3
-	case "1w", "1W", "w1", "W1", "10080": //, "w", "W":
+	case "1w", "1W", "w1", "W1", "w", "W", "10080":
 		return w1
+	case "m", "M", "70560":
+		return M
 	default:
 		return 0
 	}
 }
 
-// TF2String formats timeframe
-func TF2String(tf Timeframe) string {
+// TFString formats timeframe
+func TFString(tf Timeframe) string {
 	switch tf {
 	case m1:
 		return "1m"
@@ -210,107 +190,114 @@ func TF2String(tf Timeframe) string {
 		return "3d"
 	case w1:
 		return "1w"
+	case M:
+		return "M"
 	default:
 		return ""
 	}
 }
 
-// T ..
+// Is timeframe string valid
+func TFIsValid(tf string) bool {
+	return TFString(TFInterval(tf)) != ""
+}
+
+// T returns bar time
 func (b Bar) T() time.Time {
 	return b.Time
 }
 
-// O ..
+// O returns bar open price
 func (b Bar) O() float64 {
 	return b.Open
 }
 
-// H ..
+// H returns bar high price
 func (b Bar) H() float64 {
 	return b.High
 }
 
-// L ..
+// L returns bar low price
 func (b Bar) L() float64 {
 	return b.Low
 }
 
-// C ..
+// C returns bar close price
 func (b Bar) C() float64 {
 	return b.Close
 }
 
-// HL2 ..
+// HL2 returns bar 'mid' price
 func (b Bar) HL2() float64 {
 	return (b.High + b.Low) / 2
 }
 
-// HLC3 ..
+// HLC3 returns bar (high+low+close)/3 price
 func (b Bar) HLC3() float64 {
 	return (b.High + b.Low + b.Close) / 3
 }
 
-// OHLC3 ..
+// OHLC3 reurns bar (open+high+low+close)/4 price
 func (b Bar) OHLC4() float64 {
 	return (b.Open + b.High + b.Low + b.Close) / 4
 }
 
-// V ..
+// V returns bar volume
 func (b Bar) V() float64 {
 	return b.Volume
 }
 
-// Range ..
+// Range retuens bar rage (high-low)
 func (b Bar) Range() float64 {
 	return b.High - b.Low
 }
 
-// Body ..
+// Body
 func (b Bar) Body() float64 {
 	return math.Max(b.Open, b.Close) - math.Min(b.Open, b.Close)
 }
 
-// BodyHigh ..
+// BodyHigh
 func (b Bar) BodyHigh() float64 {
 	return math.Max(b.Open, b.Close)
 }
 
-// BodyLow ..
+// BodyLow
 func (b Bar) BodyLow() float64 {
 	return math.Min(b.Open, b.Close)
 }
 
-// Bull ..
+// Bull
 func (b Bar) Bull() bool {
 	return b.Close > b.Open
 }
 
-// Bear ..
+// Bear
 func (b Bar) Bear() bool {
 	return b.Open > b.Close
 }
 
 // Bullish that  closes upper 33%
 func (b Bar) Bullish() bool {
-	return b.Close > (b.High - b.Range()/2)
+	return b.Close >= (b.High - b.Range()/3)
 }
 
 // Bearish that  closes bottom 33%
 func (b Bar) Bearish() bool {
-	return b.Close < (b.Low + b.Range()/2)
+	return b.Close <= (b.Low + b.Range()/3)
 }
 
-// WickUp ..
+// WickUp
 func (b Bar) WickUp() float64 {
 	return b.High - b.BodyHigh()
 }
 
-// WickDn ..
+// WickDn
 func (b Bar) WickDn() float64 {
 	return b.BodyLow() - b.Low
 }
 
-// PercMove ..
+// PercMove
 func (b Bar) PercMove() float64 {
 	return 100 * ((b.Close - b.Open) / b.Open)
 }

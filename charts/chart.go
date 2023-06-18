@@ -1,4 +1,4 @@
-package charts
+package highcharts
 
 import (
 	"encoding/json"
@@ -99,11 +99,11 @@ func MakeEventFlags(events history.Events) ([]string, []string) {
 		// s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, EventTypes[event.Type], fmt.Sprintf("%s\n%s", event.Title, event.Text))
 
 		if event.Type == 0 || event.Type == 2 || event.Type == 5 {
-			s := fmt.Sprintf(`{"x":%d,"title":"B","text":%q},`, event.Time.Unix()*1000, (event.Title + " " + history.EventTypes[event.Type] + " " + event.Text))
+			s := fmt.Sprintf(`{"x":%d,"title":"B","text":%q},`, event.Time.Unix()*1000, (event.Name + " " + history.EventTypes[event.Type] + " " + event.Text))
 			buy = append(buy, s)
 		}
 		if event.Type == 1 || event.Type == 3 || event.Type == 4 {
-			s := fmt.Sprintf(`{"x":%d,"title":"S","text":%q},`, event.Time.Unix()*1000, (event.Title + " " + history.EventTypes[event.Type] + " " + event.Text))
+			s := fmt.Sprintf(`{"x":%d,"title":"S","text":%q},`, event.Time.Unix()*1000, (event.Name + " " + history.EventTypes[event.Type] + " " + event.Text))
 			sell = append(sell, s)
 		}
 	}
@@ -265,7 +265,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 			name: '` + name + `',
 			id: '` + name + `',
 			zIndex: 5,
-			data: ` + fmt.Sprintf("%s", ohlc) + `,
+			data: ` + string(ohlc) + `,
 			shadow: ` + fmt.Sprintf("%v", c.Shadow) + `,` +
 
 		func() (s string) {
@@ -381,7 +381,10 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 */
 
 // Chart ..
-func (c *Chart) BuildCharts(m map[string]history.Bars, events ...history.Event) (buf []byte, err error) {
+func (c *Chart) BuildCharts(m map[string]history.Bars, events map[string]history.Events) (buf []byte, err error) {
+	if len(m) == 0 {
+		return []byte(`no charts history`), errors.New("no charts history")
+	}
 
 	buf, err = c.MakeHeader()
 	if err != nil {
@@ -389,60 +392,46 @@ func (c *Chart) BuildCharts(m map[string]history.Bars, events ...history.Event) 
 	}
 
 	if len(events) > 0 {
-		pairEvents := history.MapEvents(events...)
-		done := make(map[string]bool)
-
-		for _, ev := range events {
-			pair := ev.Pair
-			tf := ev.Timeframe
-
-			// sort pairs, so we can list top preformers first
-			if _, ok := done[pair]; !ok {
-				done[pair] = true
-			} else {
-				continue
-			}
-
-			bars, ok := m[pair+tf]
+		// make map of all events for given symbol
+		for symbol, events := range events {
+			// get bars of symbol
+			bars, ok := m[symbol]
 			if !ok {
 				continue
 			}
-
-			chart, err := c.MakeChart(pair+tf, bars, pairEvents[pair])
+			// make chart with events included
+			chart, err := c.MakeChart(symbol, bars, events)
 			if err != nil {
 				log.Println(err)
 			}
-
 			// append to slice
 			buf = append(buf, chart...)
-
 		}
 
-		// for _, evt := range history.MapEvents(events...) {
-
-		// 	symbol := evt[0].Pair
-		// 	timeframe := evt[0].Timeframe
-
-		// 	bars, ok := m[symbol+timeframe]
+		// for _, ev := range events {
+		// 	bars, ok := m[ev.Pair+ev.Timeframe]
 		// 	if !ok {
 		// 		continue
 		// 	}
 
-		// 	chart, err := c.MakeChart(symbol+timeframe, bars, evt)
+		// 	if _, ok := done[ev.Pair]; !ok {
+		// 		done[ev.Pair] = true
+		// 	} else {
+		// 		continue
+		// 	}
+
+		// 	// chart, err := c.MakeChart(ev.Pair+ev.Timeframe, bars, mapEvents[ev.Pair])
+		// 	chart, err := c.MakeChart(ev.Pair+ev.Timeframe, bars, events.Symbol())
 		// 	if err != nil {
 		// 		log.Println(err)
 		// 	}
 
 		// 	// append to slice
 		// 	buf = append(buf, chart...)
+
 		// }
 
 	} else {
-
-		if len(m) == 0 {
-			return []byte(`no charts history`), errors.New("no charts history")
-		}
-
 		for symbol, bars := range m {
 
 			chart, err := c.MakeChart(symbol, bars, nil)

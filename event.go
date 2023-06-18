@@ -5,12 +5,26 @@ import (
 	"time"
 )
 
-// Strategy interface using Bars type as Event condition
+// Strategy interface using Bars to output Events
 type Strategy interface {
-	Event(Bars) (Event, bool)
+	Event(string, Bars) (Event, bool)
+	// Run(Bars) Events
 }
 
-// EventType ..
+// Event data for specific time and price
+type Event struct {
+	Symbol    string
+	Pair      string
+	Timeframe string
+	Name      string
+	Text      string
+	Type      EventType
+	Time      time.Time
+	Price     float64
+	Size      float64
+}
+
+// EventType
 type EventType int
 
 const (
@@ -39,29 +53,22 @@ var EventTypes = map[EventType]string{
 	8: "OTHER",
 }
 
-// Event data for specific time and price
-type Event struct {
-	Pair      string
-	Timeframe string
-	Title     string
-	Text      string
-	Type      EventType
-	Time      time.Time
-	Price     float64
-	Size      float64
+// NewEvent
+func NewEvent(symbol string) Event {
+	return Event{Symbol: symbol}
 }
 
-// Add ..
-func (e *Event) Add(typ EventType, title string, time time.Time, price float64) {
-	e.Type = typ
-	e.Title = title
-	e.Time = time
-	e.Price = price
+// Add Event -- make this to Update event     make it update() ?
+func (event *Event) Add(typ EventType, name string, time time.Time, price float64) {
+	event.Type = typ
+	event.Name = name
+	event.Time = time
+	event.Price = price
 }
 
-// IsBuy
-func (e *Event) IsBuy() bool {
-	if e.Type == 0 || e.Type == 2 || e.Type == 4 {
+// Returns true if this is a buy event
+func (event *Event) IsBuy() bool {
+	if event.Type == 0 || event.Type == 2 || event.Type == 4 {
 		return true
 	}
 	return false
@@ -71,17 +78,34 @@ func (e *Event) IsBuy() bool {
 type Events []Event
 
 // Sort Events
-func (ev Events) Sort() {
-	sort.SliceStable(ev, func(i, j int) bool {
-		return ev[i].Price > ev[j].Price
+func (events Events) Sort() Events {
+	sort.SliceStable(events, func(i, j int) bool {
+		return events[i].Price > events[j].Price
 	})
-	return
+	return events
 }
 
-// Exists ..
-func (ev Events) Exists(e Event) bool {
-	for _, old := range ev {
-		if e.Time == old.Time && e.Price == old.Price {
+/*
+
+	------ EVENTS ------
+
+*/
+
+// Return events for given symbol
+func (events Events) Symbol(symbol string) Events {
+	var ev Events
+	for _, event := range events {
+		if symbol == event.Pair+event.Timeframe {
+			ev = append(ev, event)
+		}
+	}
+	return ev
+}
+
+// Exists
+func (events Events) Exists(event Event) bool {
+	for _, old := range events {
+		if event.Time == old.Time && event.Price == old.Price {
 			return true
 		}
 	}
@@ -89,34 +113,64 @@ func (ev Events) Exists(e Event) bool {
 	return false
 }
 
-// GetLast ..
-func (ev Events) GetLast(symbol string) Event {
-	var e Events
-
-	for _, old := range ev {
-		if symbol == old.Pair+old.Timeframe {
-			e = append(e, old)
-		}
-	}
-
-	if len(e) == 0 {
+// FirstEvent in dataset
+func (events Events) FirstEvent() Event {
+	if 1 > len(events) {
 		return Event{}
 	}
 
-	return e[len(e)-1]
+	return events[len(events)-1]
+}
+
+// LastEvent in dataset
+func (events Events) LastEvent() Event {
+	if 1 > len(events) {
+		return Event{}
+	}
+
+	return events[0]
+}
+
+// Find Event for the given time
+func (events Events) Find(dt time.Time) (n int, e Event) {
+	if 1 > len(events) {
+		return -1, Event{}
+	}
+	if events.FirstEvent().Time.After(dt) || events.LastEvent().Time.Before(dt) {
+		return -1, Event{}
+	}
+
+	for i, event := range events {
+		if event.Time == dt {
+			return i, event
+		}
+	}
+
+	return -1, Event{}
 }
 
 // Add event to events list
-func (ev *Events) Add(e Event) bool {
-	*ev = append(*ev, e)
+// Note: Important to have a price
+func (events *Events) Add(event Event) bool {
+	// check if event exist
+	if event.Pair == "" || event.Price == 0 {
+		return false
+	}
+	for i := len(*events) - 1; i >= 0; i-- {
+		if event.Time == (*events)[i].Time && event.Price == (*events)[i].Price {
+			return false
+		}
+	}
+
+	*events = append(*events, event)
 	return true
 }
 
-// Delete the event from events list
-func (ev *Events) Del(e Event) bool {
-	for i, v := range *ev {
-		if v == e {
-			*ev = append((*ev)[:i], (*ev)[i+1:]...)
+// Delete event from events list
+func (events *Events) Del(event Event) bool {
+	for i, v := range *events {
+		if v == event {
+			*events = append((*events)[:i], (*events)[i+1:]...)
 			return true
 		}
 	}
@@ -124,52 +178,46 @@ func (ev *Events) Del(e Event) bool {
 	return false
 }
 
-// Remove event index in slice
-func (ev Events) RemoveIndex(index int) Events {
-	return append(ev[:index], ev[index+1:]...)
-}
-
 // Map events
-func (ev Events) Map() map[string]Events {
+func (events *Events) Map() map[string]Events {
 	m := make(map[string]Events)
 
-	for _, e := range ev {
-		// describe key
-		key := e.Pair
+	for _, event := range *events {
+		key := event.Symbol
 		if key == "" {
 			key = "unknown"
 		}
 		if _, ok := m[key]; !ok {
-			m[key] = Events{e}
+			m[key] = Events{event}
 			continue
 		}
-		m[key] = append(m[key], e)
+		m[key] = append(m[key], event)
 	}
 
 	return m
 }
 
-// MapEvents ..
-func MapEvents(ev ...Event) map[string]Events {
+// MapEvents
+func MapEvents(events ...Event) map[string]Events {
 	m := make(map[string]Events)
 
-	for _, e := range ev {
-		// describe key
-		key := e.Pair
+	events = Events(events)
+	for _, event := range events {
+		key := event.Symbol
 		if key == "" {
 			key = "unknown"
 		}
 		if _, ok := m[key]; !ok {
-			m[key] = Events{e}
+			m[key] = Events{event}
 			continue
 		}
-		m[key] = append(m[key], e)
+		m[key] = append(m[key], event)
 	}
 
 	return m
 }
 
-// // ListEvents ..
+// // ListEvents
 // func ListEvents(ev ...Event) Events {
 // 	var v Events
 
@@ -179,3 +227,8 @@ func MapEvents(ev ...Event) map[string]Events {
 
 // 	return v
 // }
+
+// Remove event index in slice
+func (ev Events) RemoveIndex(index int) Events {
+	return append(ev[:index], ev[index+1:]...)
+}

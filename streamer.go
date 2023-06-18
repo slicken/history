@@ -4,13 +4,13 @@ import (
 	"time"
 )
 
-// Streamer streams data, historys or bars
+// Streamer interface for bars
 type Streamer interface {
-	Stream(time.Time, time.Time, time.Duration) <-chan interface{}
+	<-chan Bars
 }
 
 // Streamer bars
-func (bars Bars) Streamer() <-chan Bars {
+func (bars Bars) Stream() <-chan Bars {
 	c := make(chan Bars, 1)
 
 	if len(bars) == 0 {
@@ -29,7 +29,7 @@ func (bars Bars) Streamer() <-chan Bars {
 }
 
 // Stream bars
-func (bars Bars) Stream(start, end time.Time, interval time.Duration) <-chan Bars {
+func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bars {
 	c := make(chan Bars, 1)
 
 	// check if we have bars

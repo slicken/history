@@ -1,21 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/slicken/history"
-	"github.com/slicken/history/charts"
+	"github.com/slicken/history/highcharts"
 )
 
 var (
@@ -23,15 +20,14 @@ var (
 	evl    = new(history.EventListener) // we add our strategy to eventlistener witch is looking at the hist
 	events = new(history.Events)        // we store our events here, if we want to save them
 
-	// strat = &slk{iLen: 30, lenBounces: 20} // strategy for this example
-	// strat = &Power{}              // strategy for this example
-	strat = &Engulf{}             // strategy for this example
-	chart = charts.DefaultChart() // we use highcharts for plotting
+	strat = &Engulf{}
+	//	strat = new(test)             // strategy for this example
+	chart = highcharts.DefaultChart() // we use highcharts for plotting
 
 	conf = new(Config) // config from args
 	// other
-	symbols       []string
-	topPreformers []string
+	symbols []string
+	// topPreformers []string
 )
 
 // Config holds app arguments
@@ -39,8 +35,8 @@ type Config struct {
 	// symbols
 	tf    string
 	quote string
-	// top preformers
-	file bool // output top preformers to file (for tradingview imports)
+	// top preformers - write to file
+	file bool
 	// chart settings
 	limit int
 	ctype string
@@ -48,19 +44,20 @@ type Config struct {
 	force string
 }
 
-type slice []string
+// type slice []string
 
-func (i *slice) String() string {
-	return fmt.Sprintf("%v", *i)
-}
-func (i *slice) Set(value string) error {
-	for _, v := range strings.Split(value, ",") {
-		*i = append(*i, v)
-	}
-	return nil
-}
+// func (i *slice) String() string {
+// 	return fmt.Sprintf("%v", *i)
+// }
+// func (i *slice) Set(value string) error {
+// 	for _, v := range strings.Split(value, ",") {
+// 		*i = append(*i, v)
+// 	}
+// 	return nil
+// }
 
 func main() {
+	// log.SetOutput(io.Discard)
 	// ----------------------------------------------------------------------------------------------
 	// shutdown properly
 	// ----------------------------------------------------------------------------------------------
@@ -83,10 +80,10 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// chart settings (highcharts)
 	// ----------------------------------------------------------------------------------------------
-	chart.Type = charts.ChartType(conf.ctype)
-	chart.SMA = []int{8, 20, 200}
+	chart.Type = highcharts.ChartType(conf.ctype)
+	chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
-	//create slice of charts we will be loading
+	// create list of symbols form data grabbet from my exchanges
 	// ----------------------------------------------------------------------------------------------
 	symbols = []string{conf.force}
 	if conf.force == "" {
@@ -99,21 +96,36 @@ func main() {
 
 	log.Println("initalizing...")
 	// ----------------------------------------------------------------------------------------------
-	// add the downloader interface
+	// add a downloader to the interface.
 	// ----------------------------------------------------------------------------------------------
 	hist.Downloader = &Binance{}
-	// hist.SetDataDir("./exchangedata")
 	// ----------------------------------------------------------------------------------------------
-	// keep looking for new bars and keep updating the hist struct
+	// change the default directory to store history data from exchange
+	// ----------------------------------------------------------------------------------------------
+	hist.SetDataDir("download")
+	// ----------------------------------------------------------------------------------------------
+	// update new history bars when there is a fresh bar for your symbol
 	// ----------------------------------------------------------------------------------------------
 	hist.Update(true)
 	// ----------------------------------------------------------------------------------------------
-	// load sybols
+	// load symbols. use a list to load multiple.
 	// ----------------------------------------------------------------------------------------------
 	hist.Load(symbols...)
 	// ----------------------------------------------------------------------------------------------
+	// limit bars
+	// ----------------------------------------------------------------------------------------------
+	hist.Limit(conf.limit)
+	// ----------------------------------------------------------------------------------------------
 	// add strategy to event listener
 	// ----------------------------------------------------------------------------------------------
+	// bars := hist.Bars("BTCUSDT1d").Reverse()[:10]
+	// fmt.Println()
+	// fmt.Println()
+	// fmt.Println(bars.Reverse())
+	// // os.Exit(0)
+	// os.Exit(0)
+	fmt.Printf("\n!http len(hist.Map)=%d\n\n", len(hist.Map()))
+
 	evl.Add(strat)
 	// ----------------------------------------------------------------------------------------------
 	// start event listener
@@ -122,10 +134,12 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
+
 	http.HandleFunc("/", httpIndex)
 	http.HandleFunc("/test", httpTest)
 	http.HandleFunc("/backtest", httpBacktest)
 	http.HandleFunc("/top/", httpTopPreformers)
+	http.HandleFunc("/gainers/", httpTopGainers)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -136,22 +150,9 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 		hist.Limit(conf.limit)
 	}
 
-	// var tev = new(history.Events)
-	// if len(topPreformers) > 0 {
-	// 	for _, e := range *events {
-	// 		for _, top := range topPreformers {
-	// 			if top != e.Pair {
-	// 				continue
-	// 			}
-	// 			*tev = append(*tev, e)
-	// 		}
-	// 	}
-	// } else {
-	// 	*tev = *events
-	// }
-
 	// build charts
-	c, err := chart.BuildCharts(hist.Bars, *events...)
+	var ev = history.Events{}
+	c, err := chart.BuildCharts(hist.Map(), ev.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -174,7 +175,7 @@ func httpTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// build charts
-	c, err := chart.BuildCharts(hist.Bars, ev...)
+	c, err := chart.BuildCharts(hist.Map(), ev.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -197,7 +198,7 @@ func httpBacktest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// build charts
-	c, err := chart.BuildCharts(hist.Bars, ev...)
+	c, err := chart.BuildCharts(hist.Map(), ev.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -206,53 +207,88 @@ func httpBacktest(w http.ResponseWriter, r *http.Request) {
 	w.Write(c)
 }
 
-// TopPreformers over url:8080/top/x = bars
+// TopPreformers over 'url:8080/top/x' x = number of bars
 func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
-	bars := 30
+	n := conf.limit
+	// http://127.0.0.1/top/N	where N is number of bars
 	if len(r.URL.Path) > 5 {
 		if v, err := strconv.Atoi(r.URL.Path[5:]); err == nil {
-			bars = v
+			n = v
 		}
 	}
 
-	// limit bars
-	if conf.limit > 0 {
-		hist.Limit(conf.limit)
+	// new copy of history, so we dont loose bars on histofy master data
+	var copyHist = new(history.History)
+	copyHist.Downloader = &Binance{}
+	copyHist.Update(false)
+	copyHist.Load(symbols...)
+
+	// limit history if http://127.0.0.1/top/N is used
+	if n > 0 && n != conf.limit {
+		copyHist.Limit(n + 1)
 	}
 
-	var ev = history.Events{}
-	strat := &Gained{Bars: bars}
-
-	for symbol, bars := range hist.Bars {
-		if new, ok := strat.Event(bars); ok && !events.Exists(new) {
-			new.Pair, new.Timeframe = history.Split(symbol)
-			ev = append(ev, new)
+	var results = history.Events{}
+	for symbol, bars := range copyHist.Map() {
+		if event, ok := (&Gained{n, false}).Event(symbol, bars); ok && !results.Exists(event) {
+			event.Pair, event.Timeframe = history.SplitPairTf(symbol)
+			results = append(results, event)
 		}
 	}
 
-	ev.Sort()
+	fmt.Println("-----------  events", len(results))
 
-	topPreformers = nil
-	for _, e := range ev {
-		topPreformers = append(topPreformers, e.Pair)
-		log.Printf("%-12s %.2f %%\n", e.Pair, e.Price)
-	}
+	// sort by price where the gains value is stored
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Price > results[j].Price
+	})
 
-	// save to file (compatible with tradingview imports)
-	if conf.file {
-		var buf = bytes.NewBuffer(nil)
-		var tmp []string
-		for _, v := range topPreformers {
-			tmp = append(tmp, v+",") // v[:len(v)-2]
-		}
-
-		l := int(math.Min(30, float64(len(tmp))))
-		buf.WriteString(fmt.Sprintf("%v", tmp[:l]))
-		ioutil.WriteFile(conf.quote+".txt", buf.Bytes(), 0644)
+	for _, event := range results {
+		fmt.Printf("%-12s %.2f %%\n", event.Pair+event.Timeframe, event.Price)
 	}
 
 	// build charts
-	c, err := chart.BuildCharts(hist.Bars, ev...)
+	c, err := chart.BuildCharts(copyHist.Map(), results.Map())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(c)
+}
+
+// TopPreformers over 'url:8080/gainers/  shows top gainers for 180, 90, 30 days
+func httpTopGainers(w http.ResponseWriter, r *http.Request) {
+	n := []int{180, 90, 30}
+
+	var results = history.Events{}
+	for i := range n {
+		for symbol, bars := range hist.Map() {
+			if new, ok := (&Gained{n[i], false}).Event(symbol, bars); ok && !results.Exists(new) {
+				new.Pair, new.Timeframe = history.SplitPairTf(symbol)
+				results = append(results, new)
+			}
+		}
+	}
+
+	fmt.Println("-----------  events", len(results))
+
+	// sort by price where the gains value is stored
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Price > results[j].Price
+	})
+
+	var m = make(map[string]bool, 0)
+	for _, event := range results {
+		if _, found := m[event.Pair+event.Timeframe]; found {
+			continue
+		}
+		m[event.Pair+event.Timeframe] = true
+		fmt.Printf("%-12s %.2f %%\n", event.Pair, event.Price)
+	}
+
+	// build charts
+	c, err := chart.BuildCharts(hist.Map(), results.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -264,26 +300,29 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 // ----- STRATEGIES -----------
 
 type Gained struct {
-	Bars       int
+	Limit      int
 	LowestOpen bool
 }
 
 // Event Signals ..
-func (s *Gained) Event(bars history.Bars) (history.Event, bool) {
+func (s *Gained) Event(symbol string, bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
-	if s.Bars+1 > len(bars) {
+	if s.Limit+1 > len(bars) {
 		return event, false
 	}
 
 	var perc float64
 	if s.LowestOpen {
-		perc = 100 * ((bars[0].C() - bars[0:s.Bars].Lowest(history.O)) / bars[0:s.Bars].Lowest(history.O))
+		perc = 100 * ((bars[0].C() - bars[0:s.Limit].Lowest(history.O)) / bars[0:s.Limit].Lowest(history.O))
 	} else {
-		perc = 100 * ((bars[0].C() - bars[s.Bars].O()) / bars[s.Bars].O())
+		perc = 100 * ((bars[0].C() - bars[s.Limit].O()) / bars[s.Limit].O())
 	}
-	event.Add(history.OTHER, fmt.Sprintf("%.1f", perc), bars.LastBar().T(), perc)
 
+	event.Type = history.OTHER
+	event.Name = fmt.Sprintf("%.1f", perc)
+	event.Time = bars.LastBar().T()
+	event.Price = perc
 	return event, true
 }
 
@@ -293,7 +332,7 @@ type Power struct {
 }
 
 // Event Signals ..
-func (s *Power) Event(bars history.Bars) (history.Event, bool) {
+func (s *Power) Event(symbol string, bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
 	if 150 > len(bars) {
@@ -301,8 +340,8 @@ func (s *Power) Event(bars history.Bars) (history.Event, bool) {
 	}
 
 	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
-	if p := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(p) >= 7 {
-		if "0.00000" == p[:7] {
+	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
+		if price[:7] == "0.00000" {
 			return event, false
 		}
 	}
@@ -317,206 +356,43 @@ func (s *Power) Event(bars history.Bars) (history.Event, bool) {
 		}
 	}
 
-	var slope = make(map[int][]float64, 3)
-	for i := 0; i < 30; i++ {
-		for n, v := range []float64{(bars[i:i+10].SMA(3) / bars[i+1:i+11].SMA(3)) - 1, (bars[i:i+20].SMA(3) / bars[i+1:i+21].SMA(3)) - 1, (bars[i:i+50].SMA(3) / bars[i+1:i+51].SMA(3)) - 1} {
-			slope[n] = append(slope[n], v)
-		}
-	}
-
-	// temporary shifted
 	if bars[s.shift].Bullish() &&
 
 		bars[s.shift].Range() > bars[s.shift:10+s.shift].ATR() &&
 		bars[s.shift].L() <= ma[1][s.shift] && bars[s.shift].C() > ma[1][s.shift] &&
-		bars[s.shift].C() > bars[s.shift+1:s.shift+3].Highest(history.H) &&
+		bars[s.shift].C() > bars[s.shift+1:s.shift+4].Highest(history.H) &&
 
-		bars[s.shift].O()-bars[s.shift+1:s.shift+7].Lowest(history.O) < bars[1:20].ATR() &&
+		bars[s.shift].O()-bars[s.shift+1:s.shift+7].Lowest(history.O) < bars[s.shift+1:s.shift+21].ATR() &&
 
-		ma[1][s.shift+1] > ma[2][s.shift+1] &&
-		history.WithinRange(ma[1][s.shift], bars[s.shift].C(), bars[1:20].ATR()) {
+		//ma[1][s.shift+1] > ma[2][s.shift+1] &&
+		(ma[1][s.shift] > ma[1][s.shift+1]) || (ma[2][s.shift] > ma[2][s.shift+1]) &&
 
-		event.Add(0, "POWER BUY", bars[0].T(), bars[0].O())
+		//history.WithinRange(ma[1][s.shift], ma[2][s.shift], 2*bars[s.shift+1:s.shift+21].ATR()) &&
+		history.WithinRange(ma[1][s.shift], bars[s.shift].O(), bars[s.shift+1:s.shift+21].ATR()) {
 
-		return event, true
-	}
-
-	// closing sell or close signal.
-	// placeholder for positions etc. must be made in strategy struct
-
-	sh := s.shift + 3
-	if bars[1+sh].Bullish() &&
-
-		bars[1+sh].Range() > bars[1+sh:11+sh].ATR() &&
-		bars[1+sh].L() <= ma[1][1+sh] && bars[1+sh].C() > ma[1][1+sh] &&
-		bars[1+sh].C() > bars[2+sh:4+sh].Highest(history.H) &&
-
-		bars[1+sh].O()-bars[2+sh:8+sh].Lowest(history.O) < bars[1:20].ATR() &&
-
-		ma[1][2+sh] > ma[2][2+sh] &&
-		history.WithinRange(ma[1][1+sh], bars[1+sh].C(), bars[1:20].ATR()) {
-
-		event.Add(4, "SELL", bars[0].T(), bars[0].O())
-
+		event.Type = history.MARKET_BUY
+		event.Name = "POWER BUY"
+		event.Time = bars[0].T()
+		event.Price = bars[0].O()
 		return event, true
 	}
 
 	return event, false
-}
-
-// slk location
-type slk struct{}
-
-// Event Signals .. sma/ema uses chart settings MA's
-func (s *slk) Event(bars history.Bars) (history.Event, bool) {
-	var event history.Event
-
-	// filter symbols with less bars and price prefix is equals "0.00000"
-	if 210 > len(bars) {
-		return event, false
-	}
-	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
-		if "0.00000" == price[:7] {
-			return event, false
-		}
-	}
-
-	/*
-		MovingAverages: this code uses ma's you have choosen for chart settings (chart.SMA & charts.EMA)
-		- history
-		- slopes (> 0 = sloping up, < 0 = sloing down
-		- bounces
-	*/
-
-	var SMA = make(map[int][]float64, len(chart.SMA))
-	var SMASlope = make(map[int][]float64, len(chart.SMA))
-	var SMABounce = make([]int, len(chart.SMA))
-	if len(chart.SMA) > 0 {
-		for i := 0; i < 10; i++ {
-			for n := range chart.SMA {
-				v := bars[i : i+chart.SMA[n]].SMA(history.C)
-				SMA[n] = append(SMA[n], v)
-			}
-			for n := range chart.SMA {
-				v := bars[i:i+chart.SMA[n]].SMA(history.C)/bars[i+1:i+chart.SMA[n]+1].SMA(history.C) - 1
-				SMASlope[n] = append(SMASlope[n], v)
-			}
-			if i > 0 && i < 10 {
-				i--
-				for n := range chart.SMA {
-					if bars[i].O() >= SMA[n][i] && bars[i].L() <= SMA[n][i] && bars[i].C() >= SMA[n][i] ||
-						bars[i+1].O() >= SMA[n][i+1] && bars[i+1].C() <= SMA[n][i+1] && bars[i].O() <= SMA[n][i] && bars[i].C() >= SMA[n][i] {
-						SMABounce[n]++
-					}
-				}
-				i++
-			}
-		}
-	}
-	var EMA = make(map[int][]float64, len(chart.EMA))
-	var EMASlope = make(map[int][]float64, len(chart.EMA))
-	var EMABounce = make([]int, len(chart.SMA))
-	if len(chart.EMA) > 0 {
-		for i := 0; i < 10; i++ {
-			for n := range chart.EMA {
-				v := bars[i : i+chart.EMA[n]].EMA(history.C)
-				EMA[n] = append(EMA[n], v)
-			}
-			for n := range chart.EMA {
-				v := bars[i:i+chart.EMA[n]].EMA(history.C)/bars[i+1:i+chart.EMA[n]+1].EMA(history.C) - 1
-				EMASlope[n] = append(EMASlope[n], v)
-			}
-			if i > 0 && i < 10 {
-				i--
-				for n := range chart.EMA {
-					if bars[i].O() >= EMA[n][i] && bars[i].L() <= EMA[n][i] && bars[i].C() >= EMA[n][i] ||
-						bars[i+1].O() >= EMA[n][i+1] && bars[i+1].C() <= EMA[n][i+1] && bars[i].O() <= EMA[n][i] && bars[i].C() >= EMA[n][i] {
-						EMABounce[n]++
-					}
-				}
-				i++
-			}
-		}
-	}
-
-	if SMASlope[1][1] > 0 && SMASlope[1][5] > 0 && SMASlope[1][10] > 0 &&
-		bars[2].Bullish() && bars[2].Body() > bars[3:13].ATR() && bars[2].Range() < 4*bars[3:13].ATR() &&
-		bars[1].Bear() && bars[1].BodyLow() > (bars[2].BodyLow()+bars[2].BodyHigh())*0.3 &&
-
-		// bars[2].L() <= SMA[1][2] && bars[2].C() > SMA[1][2] &&
-		// bars[2].C() > bars[2+1:2+3].Highest(history.H) &&
-
-		// bars[s.shift].O()-bars[s.shift+1:s.shift+7].Lowest(history.O) < atr &&
-
-		// bars[2].Bull() && Bullish() && bars[1].Bear() &&
-		//		bars[2].Body() > 2*bars[1].Body() &&
-		//		bars[1].BodyLow() >= (bars[2].H()+bars[2].L()/2) &&
-		bars[0].O() == bars[0].O() {
-		//		bars[1].L() <= SMA[1][1] && bars[1].C() > SMA[1][1] {
-		event.Add(0, "RBI", bars[0].T(), bars[0].C())
-		return event, true
-	}
-
-	// atr := bars[1:32].ATR()
-
-	// // SMA 0
-	// if len(chart.SMA) > 0 && SMASlope[0][0] > 0 &&
-	// 	bars[0].O() > SMA[0][0] && bars[0].L() < SMA[0][0] && bars[0].C() > SMA[0][0] {
-	// 	event.Add(0, fmt.Sprintf("SMA%d %.8f", chart.SMA[0], SMA[0][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-	// SMA 1
-	// if len(chart.SMA) > 1 && SMASlope[1][0] > 0 &&
-	// 	bars[0].O() > SMA[1][0] && bars[0].L() < SMA[1][0] && bars[0].C() > SMA[1][0] {
-	// 	event.Add(0, fmt.Sprintf("SMA%d %.8f", chart.SMA[1], SMA[1][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-	// // SMA 2
-	// if len(chart.SMA) > 2 && SMASlope[2][0] > 0 &&
-	// 	bars[0].O() > SMA[2][0] && bars[0].L() < SMA[2][0] && bars[0].C() > SMA[2][0] {
-	// 	event.Add(0, fmt.Sprintf("SMA%d %.8f", chart.SMA[2], SMA[2][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-
-	// // EMA 0
-	// if len(chart.EMA) > 0 && EMASlope[0][0] > 0 &&
-	// 	bars[0].O() > EMA[0][0] && bars[0].L() < EMA[0][0] && bars[0].C() > EMA[0][0] {
-	// 	event.Add(0, fmt.Sprintf("EMA%d %.8f", chart.EMA[0], EMA[0][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-	// // EMA 1
-	// if len(chart.EMA) > 1 && EMASlope[1][0] > 0 &&
-	// 	bars[0].O() > EMA[1][0] && bars[0].L() < EMA[1][0] && bars[0].C() > EMA[1][0] {
-	// 	event.Add(0, fmt.Sprintf("EMA%d %.8f", chart.EMA[1], EMA[1][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-	// // EMA 2
-	// if len(chart.EMA) > 2 && EMASlope[2][0] > 0 &&
-	// 	bars[0].O() > EMA[2][0] && bars[0].L() < EMA[2][0] && bars[0].C() > EMA[2][0] {
-	// 	event.Add(0, fmt.Sprintf("EMA%d %.8f", chart.EMA[2], EMA[2][0]), bars[0].T(), bars[0].C())
-	// 	return event, true
-	// }
-
-	return event, false
-
 }
 
 // Engulf location
-type Engulf struct {
-	shift int
-}
+type Engulf struct{}
 
 // Event Engulf ..
-func (s *Engulf) Event(bars history.Bars) (history.Event, bool) {
+func (s *Engulf) Event(symbol string, bars history.Bars) (history.Event, bool) {
 	var event history.Event
 
 	if 210 > len(bars) {
 		return event, false
 	}
-
 	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
-	if p := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(p) >= 7 {
-		if "0.00000" == p[:7] {
+	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
+		if price[:7] == "0.00000" {
 			return event, false
 		}
 	}
@@ -544,20 +420,53 @@ func (s *Engulf) Event(bars history.Bars) (history.Event, bool) {
 		}
 	}
 
-	// temporary shifted
-	if bars.IsEngulfBuy() &&
+	if bars.LastBearIdx() < 5 &&
+		//bars[1].Bear() &&
+		bars[0].C() > bars[bars.LastBearIdx()].H() &&
+		//slope[1][0] > 0 &&
+		ma[1][0] > ma[2][0] &&
+		//		history.WithinRange(ma[1][0], bars[0].C(), bars[1:20].ATR()) &&
+		bars[0].L() <= ma[1][0] && bars[0].C() > ma[1][0] {
 
-		// bars[s.shift].C() > ma[1][s.shift] &&
-		// bars[s.shift].C() > ma[2][s.shift] {
-
-		(bars[s.shift].L() < ma[0][s.shift] && bars[s.shift].C() > ma[0][s.shift] ||
-			bars[s.shift].L() < ma[1][s.shift] && bars[s.shift].C() > ma[1][s.shift] ||
-			bars[s.shift].L() < ma[2][s.shift] && bars[s.shift].C() > ma[2][s.shift]) {
-
-		event.Add(0, "ENGULF", bars[0].T(), bars[0].O())
-
+		event.Type = history.MARKET_BUY
+		event.Name = "ENGULF"
+		event.Time = bars[0].T()
+		event.Price = bars[0].O()
 		return event, true
 	}
 
 	return event, false
+}
+
+// test strategy
+type test struct{}
+
+// Event Signals
+func (s *test) Event(symbol string, bars history.Bars) (history.Event, bool) {
+	event := history.NewEvent(symbol)
+	// event.Name =
+	// filter symbols with less bars and price prefix is equals "0.00000"
+	if 210 > len(bars) {
+		return event, false
+	}
+	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
+		if price[:7] == "0.00000" {
+			return event, false
+		}
+	}
+	//
+	//
+	//
+	if bars[2].Bullish() && bars[2].Body() > bars[3:13].ATR() && bars[2].Range() < 4*bars[3:13].ATR() &&
+		bars[1].Bear() && bars[1].BodyLow() > (bars[2].BodyLow()+bars[2].BodyHigh())*0.3 {
+
+		event.Type = history.MARKET_BUY
+		event.Name = "RBI"
+		event.Time = bars[0].T()
+		event.Price = bars[0].O()
+		return event, true
+	}
+
+	return event, false
+
 }

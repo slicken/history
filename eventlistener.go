@@ -27,15 +27,15 @@ func (e *EventListener) Start(hist *History, events *Events) {
 				if !ok || len(e.strategies) == 0 {
 					continue
 				}
-				pair, timeframe := Split(symbol)
+				pair, timeframe := SplitPairTf(symbol)
 				if pair+timeframe == "" {
 					continue
 				}
 
 				// get bars and run strategies on them
-				bars := hist.Bars[symbol]
+				bars := hist.Bars(symbol)
 				for _, strat := range e.strategies {
-					if new, ok := strat.Event(bars); ok && !events.Exists(new) {
+					if new, ok := strat.Event(symbol, bars); ok && !events.Exists(new) {
 
 						new.Pair = pair
 						new.Timeframe = timeframe

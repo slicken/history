@@ -17,8 +17,6 @@ var (
 	initial = 1000.
 )
 
-var Port = new(Portfolio)
-
 type Portfolio struct {
 	Pairs map[string]*Pair
 	// initial float64
@@ -43,11 +41,7 @@ type Position struct {
 	size       float64
 }
 
-// PortfolioTester is strategy backtester interface
-type PortfolioTester interface {
-	Test(Strategy, time.Time, time.Time) (Events, error)
-}
-
+// Add a position to portfolio
 func (p *Portfolio) Add(pos *Position) error {
 	if pos.symbol == "" {
 		return errors.New("symbol is missing")
@@ -116,12 +110,12 @@ func (p *Portfolio) Close(symbol string, price float64) error {
 
 // Pass checks if this event should be passed
 func (p *Portfolio) Pass(e Event) bool {
-	sym := e.Pair + e.Timeframe
-	if _, ok := p.Pairs[sym]; !ok {
+	symbol := e.Pair + e.Timeframe
+	if _, ok := p.Pairs[symbol]; !ok {
 		return false
 	}
 
-	if len(p.Pairs[sym].open) == 0 {
+	if len(p.Pairs[symbol].open) == 0 {
 		return true
 	}
 
@@ -141,66 +135,69 @@ func (p Pair) CountWins() int {
 }
 
 // Test strategys compatible with both Strategy (bars) and MultiStrategy (whole history struct)
-func (data *History) PTest(strat interface{}, start, end time.Time) (Events, error) {
-	if len(data.Bars) == 0 {
-		return nil, errNoHist
+func (h *History) PTest(strat Strategy, start, end time.Time) (Events, error) {
+	if len(h.bars) == 0 {
+		return nil, errors.New("no history")
 	}
 
+	var Wallet = new(Portfolio)
+
 	events := make(Events, 0)
-	log.Printf("PORTFOLIO TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(TFMT), end.Format(TFMT))
+	log.Printf("[BACKTEST] %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(dt_stamp), end.Format(dt_stamp))
 
-	// BarStrategy
-	if strat, ok := strat.(Strategy); ok {
+	for symbol, bars := range h.bars {
 
-		for symbol, bars := range data.Bars {
+		for b := range bars.StreamInterval(start, end, bars.Period()) {
 
-			for b := range bars.Stream(start, end, bars.Period()) {
+			if event, ok := strat.Event(symbol, b); ok {
+				event.Pair, event.Timeframe = SplitPairTf(symbol)
 
-				if event, ok := strat.Event(b); ok {
-					event.Pair, event.Timeframe = Split(symbol)
-
-					if !events.Exists(event) && !Port.Pass(event) {
-						events = append(events, event)
-					} else {
-						continue
-					}
-
-					// fix code ----------------------->
-
-					price := b[0].C()
-
-					pos := &Position{
-						id:        event.Time,
-						symbol:    symbol,
-						isBuy:     event.IsBuy(),
-						openPrice: event.Price,
-						size:      size / price,
-					}
-
-					// check for EventType to preforme action
-					if event.Type == MARKET_BUY || event.Type == MARKET_SELL {
-						if err := Port.Add(pos); err != nil {
-							log.Println("PortfolioAdd:", err.Error())
-						}
-
-					} else if event.Type == CLOSE_BUY || event.Type == CLOSE_SELL {
-						Port.Close(symbol, price)
-					}
-
-					// calc unreleased of open positions
-					pair, ok := Port.Pairs[pos.symbol]
-					if !ok {
-						continue
-					}
-					pair.Update(pos.symbol, price)
+				if !events.Exists(event) && !Wallet.Pass(event) {
+					events = append(events, event)
+				} else {
+					continue
 				}
+
+				// fix code ----------------------->
+
+				price := b.LastBar().C()
+
+				pos := &Position{
+					id:        event.Time,
+					symbol:    symbol,
+					isBuy:     event.IsBuy(),
+					openPrice: event.Price,
+					size:      size / price,
+				}
+
+				// check for EventType to preforme action
+				if event.Type == MARKET_BUY || event.Type == MARKET_SELL {
+					if err := Wallet.Add(pos); err != nil {
+						log.Println("PortfolioAdd:", err.Error())
+					}
+				}
+
+				if event.Type == CLOSE_BUY || event.Type == CLOSE_SELL {
+					Wallet.Close(symbol, price)
+				}
+
+				// calc unreleased of open positions
+				pair, ok := Wallet.Pairs[pos.symbol]
+				if !ok {
+					continue
+				}
+				pair.Update(pos.symbol, price)
 			}
 		}
 	}
 
-	fmt.Printf("%s\n", Port.Print())
-
-	log.Printf("PTEST completed with %d Events\n", len(events))
+	fmt.Printf("%s\n", Wallet.Print())
+	var wins, total int
+	for _, v := range Wallet.Pairs {
+		total += len(v.closed)
+		wins += v.CountWins()
+	}
+	log.Printf("[BACKTEST] completed with %d Events, wins=%d/%d ratio=%.1f%%\n", len(events), wins, total, 100*float64(wins)/float64(total))
 	return events, nil
 }
 
@@ -219,12 +216,11 @@ func (p *Pair) Update(symbol string, price float64) {
 			p.unreleased -= profit
 		}
 	}
-
 }
 
 func (p *Portfolio) Print() []byte {
 
-	var buf = bytes.NewBuffer([]byte("PORTFOLIO SUMMARY\r\n----------------------------"))
+	var buf = bytes.NewBuffer([]byte("[BACKTEST] SUMMARY\r\n----------------------------"))
 	for _, pair := range p.Pairs {
 		buf.WriteString(fmt.Sprintf(`
 symbol:       %s

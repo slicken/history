@@ -1,45 +1,42 @@
 package history
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
 )
 
-const TFMT = "2006/01/02 15:04"
+const dt_stamp = "2006/01/02 15:04"
 
 // Tester is strategy backtester interface
 type Tester interface {
-	Test(Strategy, time.Time, time.Time) (Events, error)
+	Test() (Events, error)
 }
 
 // Test strategys compatible with both Strategy (bars) and MultiStrategy (whole history struct)
-func (data *History) Test(strat interface{}, start, end time.Time) (Events, error) {
-	if len(data.Bars) == 0 {
-		return nil, errNoHist
+func (hist *History) Test(strategy Strategy, start, end time.Time) (Events, error) {
+	if len(hist.bars) == 0 {
+		return nil, errors.New("no history")
 	}
 
 	events := make(Events, 0)
-	log.Printf("TEST %s\t %v --> %v\n", fmt.Sprintf("%T", strat)[6:], start.Format(TFMT), end.Format(TFMT))
+	log.Printf("[TEST] %s\t %v --> %v\n", fmt.Sprintf("%T", strategy)[6:], start.Format(dt_stamp), end.Format(dt_stamp))
 
-	// BarStrategy
-	if strat, ok := strat.(Strategy); ok {
+	for symbol, bars := range hist.bars {
 
-		for symbol, bars := range data.Bars {
+		for streamBars := range bars.StreamInterval(start, end, bars.Period()) {
 
-			for b := range bars.Stream(start, end, bars.Period()) {
+			if event, ok := strategy.Event(symbol, streamBars); ok {
+				event.Pair, event.Timeframe = SplitPairTf(symbol)
 
-				if event, ok := strat.Event(b); ok {
-					event.Pair, event.Timeframe = Split(symbol)
-
-					if !events.Exists(event) {
-						events = append(events, event)
-					}
+				if !events.Exists(event) {
+					events = append(events, event)
 				}
 			}
 		}
 	}
 
-	log.Printf("TEST completed with %d Events\n", len(events))
+	log.Printf("[TEST] completed with %d Events\n", len(events))
 	return events, nil
 }
