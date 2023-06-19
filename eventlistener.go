@@ -17,7 +17,7 @@ type EventListener struct {
 func (e *EventListener) Start(hist *History, events *Events) {
 	e.running = true
 
-	log.Println("EVENTLISTENER started")
+	log.Println("[EVENTLISTENER] started")
 
 	go func() {
 		for {
@@ -27,26 +27,22 @@ func (e *EventListener) Start(hist *History, events *Events) {
 				if !ok || len(e.strategies) == 0 {
 					continue
 				}
-				pair, timeframe := SplitPairTf(symbol)
-				if pair+timeframe == "" {
-					continue
-				}
-
-				// get bars and run strategies on them
+				// get bars and run all strategies on them
 				bars := hist.Bars(symbol)
-				for _, strat := range e.strategies {
-					if new, ok := strat.Event(symbol, bars); ok && !events.Exists(new) {
+				for _, strategy := range e.strategies {
+					if event, ok := strategy.Run(symbol, bars); ok {
 
-						new.Pair = pair
-						new.Timeframe = timeframe
-						*events = append(*events, new)
-						log.Printf("%s%s %s %s %.8f\n", new.Pair, new.Timeframe, EventTypes[new.Type], new.Text, new.Price)
+						ok := events.Add(event)
+						if !ok {
+							log.Println("[EVENTLISTENER] coult not add event")
+							continue
+						}
+						log.Printf("%s %s %s %.8f\n", event.Symbol, EventTypes[event.Type], event.Text, event.Price)
 					}
 				}
 
 			default:
 				if !e.running {
-					log.Println("EVENTLISTENER stopped")
 					return
 				}
 				time.Sleep(time.Second)
@@ -57,32 +53,32 @@ func (e *EventListener) Start(hist *History, events *Events) {
 
 // List ..
 func (e *EventListener) List() {
-	for _, strat := range e.strategies {
-		fmt.Println(fmt.Sprintf("%T", strat)[6:])
+	for _, strategy := range e.strategies {
+		fmt.Println(fmt.Sprintf("%T", strategy)[6:])
 	}
 }
 
 // Stop event listener
 func (e *EventListener) Stop() {
 	e.running = false
+	log.Println("[EVENTLISTENER] stopped!")
 }
 
 // Add strategy
 func (e *EventListener) Add(s Strategy) {
 	e.strategies = append(e.strategies, s)
-
-	log.Println("EVENTLISTENER added", fmt.Sprintf("%T", s)[6:])
+	log.Println("[EVENTLISTENER] added", fmt.Sprintf("%T", s)[6:])
 }
 
 // Remove strategy
 func (e *EventListener) Remove(s Strategy) error {
-	for i, strat := range e.strategies {
-		if strat == s {
+	for i, strategy := range e.strategies {
+		if strategy == s {
 			l := len(e.strategies) - 1
 			e.strategies[i] = e.strategies[l]
 			e.strategies = e.strategies[:l]
 
-			log.Println("EVENTLISTENER removed", fmt.Sprintf("%T", s)[6:])
+			log.Println("[EVENTLISTENER] removed", fmt.Sprintf("%T", s)[6:])
 			return nil
 		}
 	}

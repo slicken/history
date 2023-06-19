@@ -20,19 +20,13 @@ func (hist *History) Test(strategy Strategy, start, end time.Time) (Events, erro
 		return nil, errors.New("no history")
 	}
 
-	events := make(Events, 0)
-	log.Printf("[TEST] %s\t %v --> %v\n", fmt.Sprintf("%T", strategy)[6:], start.Format(dt_stamp), end.Format(dt_stamp))
+	var events Events
+	log.Printf("[TEST] %s (start: %v ==> end: %v)\n", fmt.Sprintf("%T", strategy)[6:], start.Format(dt_stamp), end.Format(dt_stamp))
 
 	for symbol, bars := range hist.bars {
-
-		for streamBars := range bars.StreamInterval(start, end, bars.Period()) {
-
-			if event, ok := strategy.Event(symbol, streamBars); ok {
-				event.Pair, event.Timeframe = SplitPairTf(symbol)
-
-				if !events.Exists(event) {
-					events = append(events, event)
-				}
+		for streamedBars := range bars.StreamInterval(start, end, bars.Period()) {
+			if event, ok := strategy.Run(symbol, streamedBars); ok {
+				events.Add(event)
 			}
 		}
 	}

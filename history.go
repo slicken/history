@@ -142,10 +142,10 @@ func (h *History) Limit(length int) *History {
 	return h
 }
 
-// LimitDT the data for specified data time intervalls
-func (h *History) LimitDT(start, end time.Time) *History {
-	h.Lock()
-	defer h.Unlock()
+// LimiTimeSpan the data for specified data time intervalls
+func (h *History) LimitTimeSpan(start, end time.Time) *History {
+	// h.Lock()
+	// defer h.Unlock()
 	var wg sync.WaitGroup
 
 	for symbol := range h.bars {
@@ -154,9 +154,9 @@ func (h *History) LimitDT(start, end time.Time) *History {
 		go func(sym string, wg *sync.WaitGroup) {
 			defer wg.Done()
 
-			// h.Lock()
+			h.Lock()
 			h.bars[sym] = h.bars[sym].TimeSpan(start, end)
-			// h.Unlock()
+			h.Unlock()
 		}(symbol, &wg)
 	}
 
@@ -164,18 +164,19 @@ func (h *History) LimitDT(start, end time.Time) *History {
 	return h
 }
 
+// need fixing
 // Unload removes symbol bars from data struct gracefully
 func (h *History) Unload(symbol string) error {
 	h.Lock()
 	defer h.Unlock()
 
-	sym, tf := SplitPairTf(symbol)
+	pair, tf := SplitPairTf(symbol)
 	if tf == "" {
 		// delete all timeframes of pair if symbol if missing timeframe
-		for v := range h.bars {
-			s, _ := SplitPairTf(v)
-			if s == sym {
-				delete(h.bars, v)
+		for _symbol := range h.bars {
+			_pair, _ := SplitPairTf(_symbol)
+			if _pair == pair {
+				delete(h.bars, _symbol)
 			}
 		}
 	} else {
@@ -190,20 +191,16 @@ func (h *History) Unload(symbol string) error {
 func (h *History) Load(symbols ...string) error {
 	var wg sync.WaitGroup
 
-	for _, s := range symbols {
-		if sym, tf := SplitPairTf(s); sym == "" || tf == "" {
-			log.Printf("could not split %s. got symbol=%s timeframe=%s\n", s, sym, tf)
-			continue
-		}
+	for _, symbol := range symbols {
 
 		wg.Add(1)
 		go func(symbol string, wg *sync.WaitGroup) {
 			defer wg.Done()
 
-			// we dont check for errors, cause we use add ether way
+			// we add ether way
 			bars, _ := ReadBars(symbol)
 			h.Add(symbol, bars)
-		}(s, &wg)
+		}(symbol, &wg)
 	}
 
 	wg.Wait()
@@ -326,12 +323,11 @@ func (h *History) Update(enabled bool) {
 func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 	defer wg.Done()
 
-	sym, tf := SplitPairTf(symbol)
+	pair, tf := SplitPairTf(symbol)
 
 	var err error
 	var bars Bars
-
-	bars, err = h.GetKlines(sym, tf, limit)
+	bars, err = h.GetKlines(pair, tf, limit)
 	if err != nil {
 		log.Printf("failed to download %d bars for %s: %v\n", limit, symbol, err)
 		time.Sleep(2 * time.Minute)

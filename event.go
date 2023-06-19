@@ -7,8 +7,7 @@ import (
 
 // Strategy interface using Bars to output Events
 type Strategy interface {
-	Event(string, Bars) (Event, bool)
-	// Run(Bars) Events
+	Run(string, Bars) (Event, bool)
 }
 
 // Event data for specific time and price
@@ -41,29 +40,22 @@ const (
 	OTHER
 )
 
+// EventTypes
 var EventTypes = map[EventType]string{
-	0: "MARKET_BUY",
-	1: "MARKET_SELL",
-	2: "LIMIT_BUY",
-	3: "LIMIT_SELL",
-	4: "CLOSE_BUY",
-	5: "CLOSE_SELL",
-	6: "MODIFY",
-	7: "NEWS",
-	8: "OTHER",
+	MARKET_BUY:  "MARKET_BUY",
+	MARKET_SELL: "MARKET_SELL",
+	LIMIT_BUY:   "LIMIT_BUY",
+	LIMIT_SELL:  "LIMIT_SELL",
+	CLOSE_BUY:   "CLOSE_BUY",
+	CLOSE_SELL:  "CLOSE_SELL",
+	MODIFY:      "MODIFY",
+	NEWS:        "NEWS",
+	OTHER:       "OTHER",
 }
 
 // NewEvent
 func NewEvent(symbol string) Event {
 	return Event{Symbol: symbol}
-}
-
-// Add Event -- make this to Update event     make it update() ?
-func (event *Event) Add(typ EventType, name string, time time.Time, price float64) {
-	event.Type = typ
-	event.Name = name
-	event.Time = time
-	event.Price = price
 }
 
 // Returns true if this is a buy event
@@ -73,6 +65,12 @@ func (event *Event) IsBuy() bool {
 	}
 	return false
 }
+
+/*
+
+	------ EVENTS ------
+
+*/
 
 // Events type
 type Events []Event
@@ -85,17 +83,11 @@ func (events Events) Sort() Events {
 	return events
 }
 
-/*
-
-	------ EVENTS ------
-
-*/
-
 // Return events for given symbol
 func (events Events) Symbol(symbol string) Events {
 	var ev Events
 	for _, event := range events {
-		if symbol == event.Pair+event.Timeframe {
+		if symbol == event.Symbol {
 			ev = append(ev, event)
 		}
 	}
@@ -153,7 +145,7 @@ func (events Events) Find(dt time.Time) (n int, e Event) {
 // Note: Important to have a price
 func (events *Events) Add(event Event) bool {
 	// check if event exist
-	if event.Pair == "" || event.Price == 0 {
+	if event.Symbol == "" || event.Price == 0 {
 		return false
 	}
 	for i := len(*events) - 1; i >= 0; i-- {

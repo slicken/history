@@ -312,7 +312,7 @@ func (c *Chart) MakeChart(name string, bars history.Bars, events history.Events)
 					type: 'column',
 					name: 'Volume',
 					id: 'vol',
-					data: ` + fmt.Sprintf("%s", volume) + `,
+					data: ` + string(volume) + `,
 					yAxis: 1,
 					zIndex: 1,
 					shadow: ` + fmt.Sprintf("%v", c.Shadow) + `,`
