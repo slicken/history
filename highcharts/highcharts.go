@@ -46,13 +46,9 @@ const (
 // DefaultChart returns default chart settings
 func DefaultChart() *Chart {
 	return &Chart{
-		Type: Candlestick,
-		//		SMA:    []int{20,200},
-		//		EMA:    []int{21},
-		Volume: true,
-		//		VolumeSMA: 7,
-		Shadow: false,
-
+		Type:      Candlestick,
+		Volume:    true,
+		Shadow:    true,
 		SetWidth:  "56%",
 		SetHeight: "72%",
 		SetMargin: "25px",
