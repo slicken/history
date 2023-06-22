@@ -20,7 +20,7 @@ go build -o app
 ```
 
 view preformance by days, vist 127.0.0.1:8080/top/N = days
-![Alt text](top30.png?raw=true "127.0.0.1/top/30")
+![Alt text](examples/top30.png?raw=true "127.0.0.1/top/30")
 
 # example file
 view examples/main.go for details and exmpanation.
