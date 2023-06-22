@@ -1,4 +1,4 @@
-# HISTORY
+# HISTORY - !NOT FINISHED!
 
 manages and stores market history data.<br>
 downloads new bars as there are new bars avaliable.<br>
