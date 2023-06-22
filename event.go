@@ -171,10 +171,10 @@ func (events *Events) Del(event Event) bool {
 }
 
 // Map events
-func (events *Events) Map() map[string]Events {
+func (events Events) Map() map[string]Events {
 	m := make(map[string]Events)
 
-	for _, event := range *events {
+	for _, event := range events {
 		key := event.Symbol
 		if key == "" {
 			key = "unknown"
@@ -209,16 +209,16 @@ func MapEvents(events ...Event) map[string]Events {
 	return m
 }
 
-// // ListEvents
-// func ListEvents(ev ...Event) Events {
-// 	var v Events
+// ListEvents
+func ListEvents(ev ...Event) Events {
+	var v Events
 
-// 	for _, e := range ev {
-// 		v = append(v, e)
-// 	}
+	for _, e := range ev {
+		v = append(v, e)
+	}
 
-// 	return v
-// }
+	return v
+}
 
 // Remove event index in slice
 func (ev Events) RemoveIndex(index int) Events {

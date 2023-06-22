@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"syscall"
 
@@ -103,8 +102,8 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	// highchart settings (highcharts)
 	// ----------------------------------------------------------------------------------------------
-	chart.Type = highcharts.ChartType(highcharts.Spline)
-	// chart.SMA = []int{20, 200}
+	// chart.Type = highcharts.ChartType(highcharts.Spline)
+	chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
@@ -196,7 +195,7 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 	var results history.Events
 	for symbol, bars := range copyHist.Map() {
 		// Preformers strategy is more like a scanner
-		strategy := &Preformers{n, false}
+		strategy := &Preformance{n, false}
 		if event, ok := strategy.Run(symbol, bars); ok {
 			// add to list
 			results.Add(event)
@@ -206,22 +205,36 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("-----------  events", len(results))
 
 	// sort by price where the gains value is stored
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].Price > results[j].Price
-	})
-
+	results.Sort()
 	for _, event := range results {
 		fmt.Printf("%-12s %.2f %%\n", event.Symbol, event.Price)
 	}
 
-	// build charts
-	c, err := chart.BuildCharts(copyHist.Map(), results.Map())
+	/*
+
+		build charts with custom order
+
+	*/
+
+	buf, err := chart.MakeHeader()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println(err)
 		return
 	}
 
-	w.Write(c)
+	for _, ev := range results {
+		bars := copyHist.Bars(ev.Symbol)
+		title := fmt.Sprintf("%s  %.2f%%", ev.Symbol, ev.Price)
+		chart, err := chart.MakeChart(title, bars, results.Symbol(ev.Symbol))
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		// append to slice
+		buf = append(buf, chart...)
+	}
+
+	w.Write(buf)
 }
 
 /*
@@ -230,13 +243,13 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 
 */
 
-type Preformers struct {
+type Preformance struct {
 	Limit      int
 	LowestOpen bool
 }
 
 // Event Signals ...
-func (s *Preformers) Run(symbol string, bars history.Bars) (history.Event, bool) {
+func (s *Preformance) Run(symbol string, bars history.Bars) (history.Event, bool) {
 	var event = history.NewEvent(symbol)
 
 	if s.Limit+1 > len(bars) {

@@ -389,43 +389,20 @@ func (c *Chart) BuildCharts(m map[string]history.Bars, events map[string]history
 
 	if len(events) > 0 {
 		// make map of all events for given symbol
-		for symbol, events := range events {
+		for symbol, ev := range events {
 			// get bars of symbol
 			bars, ok := m[symbol]
 			if !ok {
 				continue
 			}
 			// make chart with events included
-			chart, err := c.MakeChart(symbol, bars, events)
+			chart, err := c.MakeChart(symbol, bars, ev)
 			if err != nil {
 				log.Println(err)
 			}
 			// append to slice
 			buf = append(buf, chart...)
 		}
-
-		// for _, ev := range events {
-		// 	bars, ok := m[ev.Pair+ev.Timeframe]
-		// 	if !ok {
-		// 		continue
-		// 	}
-
-		// 	if _, ok := done[ev.Pair]; !ok {
-		// 		done[ev.Pair] = true
-		// 	} else {
-		// 		continue
-		// 	}
-
-		// 	// chart, err := c.MakeChart(ev.Pair+ev.Timeframe, bars, mapEvents[ev.Pair])
-		// 	chart, err := c.MakeChart(ev.Pair+ev.Timeframe, bars, events.Symbol())
-		// 	if err != nil {
-		// 		log.Println(err)
-		// 	}
-
-		// 	// append to slice
-		// 	buf = append(buf, chart...)
-
-		// }
 
 	} else {
 		for symbol, bars := range m {
