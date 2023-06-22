@@ -52,7 +52,6 @@ func (p *Portfolio) Add(pos *Position) error {
 	if pos.size == 0 {
 		return errors.New("size is missing")
 	}
-
 	if p.Pairs == nil {
 		p.Pairs = make(map[string]*Pair)
 	}
@@ -79,7 +78,6 @@ func (p *Portfolio) Close(symbol string, price float64) error {
 	if _, ok := p.Pairs[symbol]; !ok {
 		return errors.New("not exist")
 	}
-
 	if len(p.Pairs[symbol].open) == 0 {
 		return errors.New("no open")
 	}
@@ -92,9 +90,7 @@ func (p *Portfolio) Close(symbol string, price float64) error {
 	}
 
 	// calc profits -->
-
 	profit := (price - pos.openPrice) * pos.size
-
 	if pos.isBuy {
 		p.Pairs[pos.symbol].balance += profit
 	} else {
@@ -110,12 +106,11 @@ func (p *Portfolio) Close(symbol string, price float64) error {
 
 // Pass checks if this event should be passed
 func (p *Portfolio) Pass(e Event) bool {
-	symbol := e.Pair + e.Timeframe
-	if _, ok := p.Pairs[symbol]; !ok {
+	if _, ok := p.Pairs[e.Symbol]; !ok {
 		return false
 	}
 
-	if len(p.Pairs[symbol].open) == 0 {
+	if len(p.Pairs[e.Symbol].open) == 0 {
 		return true
 	}
 
@@ -134,8 +129,8 @@ func (p Pair) CountWins() int {
 	return win
 }
 
-// Test strategies with fake proftfolio balance
-func (h *History) PTest(strategy Strategy, start, end time.Time) (Events, error) {
+// PortfolioTest strategies with fake proftfolio balance
+func (h *History) PortfolioTest(strategy Strategy, start, end time.Time) (Events, error) {
 	if len(h.bars) == 0 {
 		return nil, errors.New("no history")
 	}
@@ -153,13 +148,6 @@ func (h *History) PTest(strategy Strategy, start, end time.Time) (Events, error)
 				if !ok {
 					continue
 				}
-				// event.Pair, event.Timeframe = SplitPairTf(symbol)
-
-				// if !events.Exists(event) && !Wallet.Pass(event) {
-				// 	events = append(events, event)
-				// } else {
-				// 	continue
-				// }
 
 				// fix code ----------------------->
 
@@ -179,7 +167,7 @@ func (h *History) PTest(strategy Strategy, start, end time.Time) (Events, error)
 						log.Println("PortfolioAdd:", err.Error())
 					}
 				}
-
+				// close postions
 				if event.Type == CLOSE_BUY || event.Type == CLOSE_SELL {
 					Wallet.Close(symbol, price)
 				}

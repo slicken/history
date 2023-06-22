@@ -103,12 +103,12 @@ func main() {
 	// highchart settings (highcharts)
 	// ----------------------------------------------------------------------------------------------
 	// chart.Type = highcharts.ChartType(highcharts.Spline)
-	chart.SMA = []int{20, 200}
+	chart.SMA = []int{10, 20}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
 	http.HandleFunc("/", httpIndex)
-	http.HandleFunc("/test", httpTest)
+	http.HandleFunc("/test", httPortfolioTest)
 	http.HandleFunc("/backtest", httpBacktest)
 	http.HandleFunc("/top/", httpTopPreformers) // top preformers for x days
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -120,7 +120,7 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
-	// build charts is empty event
+	// build charts. if we pass empty events, it will only plot bars data
 	var ev history.Events
 	c, err := chart.BuildCharts(hist.Map(), ev.Map())
 	if err != nil {
@@ -130,18 +130,18 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(c)
 }
 
-// backtest strategy and plot events on chart
-func httpTest(w http.ResponseWriter, r *http.Request) {
+// backtest strategy and plot events
+func httPortfolioTest(w http.ResponseWriter, r *http.Request) {
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
-	// run strategy backtest on all data
+	// runbacktest on all history that 'hist' handles
 	ev, err := hist.Test(strategy, hist.FirstTime(), hist.LastTime())
 	if err != nil {
 		log.Fatal(err)
 	}
-	// build charts
+	// build charts with events
 	c, err := chart.BuildCharts(hist.Map(), ev.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -150,14 +150,14 @@ func httpTest(w http.ResponseWriter, r *http.Request) {
 	w.Write(c)
 }
 
-// Backtest strategy and plot events on chart
+// Backtest with portfolio
 func httpBacktest(w http.ResponseWriter, r *http.Request) {
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
 	// run strategy backtest on all data
-	ev, err := hist.PTest(strategy, hist.FirstTime(), hist.LastTime())
+	ev, err := hist.PortfolioTest(strategy, hist.FirstTime(), hist.LastTime())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -180,51 +180,43 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 			n = v
 		}
 	}
-
-	// new copy of history, so we dont loose bars on histofy master data
+	// new copy of history, so we dont cut any bars from 'hist' struct
 	var copyHist = new(history.History)
 	copyHist.Downloader = &Binance{}
 	copyHist.Update(false)
 	copyHist.Load(symbols...)
-
 	// limit history if 'http://127.0.0.1/top/N' is used
 	if n > 0 && n != config.limit {
 		copyHist.Limit(n + 1)
 	}
-
+	// run strategy and save events to new bucket
 	var results history.Events
 	for symbol, bars := range copyHist.Map() {
-		// Preformers strategy is more like a scanner
 		strategy := &Preformance{n, false}
 		if event, ok := strategy.Run(symbol, bars); ok {
-			// add to list
+			// add event, in this case its only a percentage value
 			results.Add(event)
 		}
 	}
-
-	fmt.Println("-----------  events", len(results))
-
 	// sort by price where the gains value is stored
 	results.Sort()
 	for _, event := range results {
 		fmt.Printf("%-12s %.2f %%\n", event.Symbol, event.Price)
 	}
-
+	fmt.Println("-----------  events", len(results))
 	/*
 
-		build charts with custom order
+		build charts with custom order flow
 
 	*/
-
 	buf, err := chart.MakeHeader()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-
 	for _, ev := range results {
 		bars := copyHist.Bars(ev.Symbol)
-		title := fmt.Sprintf("%s  %.2f%%", ev.Symbol, ev.Price)
+		title := fmt.Sprintf("%-20s  (%.2f%%)", ev.Symbol, ev.Price)
 		chart, err := chart.MakeChart(title, bars, results.Symbol(ev.Symbol))
 		if err != nil {
 			log.Println(err)
@@ -233,7 +225,6 @@ func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
 		// append to slice
 		buf = append(buf, chart...)
 	}
-
 	w.Write(buf)
 }
 
@@ -270,59 +261,59 @@ func (s *Preformance) Run(symbol string, bars history.Bars) (history.Event, bool
 	return event, true
 }
 
-// // Power location
-// type Power struct {
-// 	shift int
-// }
+// Power location
+type Power struct {
+	shift int
+}
 
-// // Power strategy
-// func (s *Power) Run(symbol string, bars history.Bars) (history.Event, bool) {
-// 	var event history.Event
+// Power strategy
+func (s *Power) Run(symbol string, bars history.Bars) (history.Event, bool) {
+	var event history.Event
 
-// 	if 150 > len(bars) {
-// 		return event, false
-// 	}
+	if 150 > len(bars) {
+		return event, false
+	}
 
-// 	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
-// 	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
-// 		if price[:7] == "0.00000" {
-// 			return event, false
-// 		}
-// 	}
+	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
+	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
+		if price[:7] == "0.00000" {
+			return event, false
+		}
+	}
 
-// 	// --------------
+	// --------------
 
-// 	// 0=10, 1=20, 2=50
-// 	var ma = make(map[int][]float64, 3)
-// 	for i := 0; i < 30; i++ {
-// 		for n, v := range []float64{bars[i : i+10].SMA(3), bars[i : i+20].SMA(3), bars[i : i+50].SMA(3)} {
-// 			ma[n] = append(ma[n], v)
-// 		}
-// 	}
+	// 0=10, 1=20, 2=50
+	var ma = make(map[int][]float64, 3)
+	for i := 0; i < 30; i++ {
+		for n, v := range []float64{bars[i : i+10].SMA(3), bars[i : i+20].SMA(3), bars[i : i+50].SMA(3)} {
+			ma[n] = append(ma[n], v)
+		}
+	}
 
-// 	if bars[s.shift].Bullish() &&
+	if bars[s.shift].Bullish() &&
 
-// 		bars[s.shift].Range() > bars[s.shift:10+s.shift].ATR() &&
-// 		bars[s.shift].L() <= ma[1][s.shift] && bars[s.shift].C() > ma[1][s.shift] &&
-// 		bars[s.shift].C() > bars[s.shift+1:s.shift+4].Highest(history.H) &&
+		bars[s.shift].Range() > bars[s.shift:10+s.shift].ATR() &&
+		bars[s.shift].L() <= ma[1][s.shift] && bars[s.shift].C() > ma[1][s.shift] &&
+		bars[s.shift].C() > bars[s.shift+1:s.shift+4].Highest(history.H) &&
 
-// 		bars[s.shift].O()-bars[s.shift+1:s.shift+7].Lowest(history.O) < bars[s.shift+1:s.shift+21].ATR() &&
+		bars[s.shift].O()-bars[s.shift+1:s.shift+7].Lowest(history.O) < bars[s.shift+1:s.shift+21].ATR() &&
 
-// 		//ma[1][s.shift+1] > ma[2][s.shift+1] &&
-// 		(ma[1][s.shift] > ma[1][s.shift+1]) || (ma[2][s.shift] > ma[2][s.shift+1]) &&
+		//ma[1][s.shift+1] > ma[2][s.shift+1] &&
+		(ma[1][s.shift] > ma[1][s.shift+1]) || (ma[2][s.shift] > ma[2][s.shift+1]) &&
 
-// 		//history.WithinRange(ma[1][s.shift], ma[2][s.shift], 2*bars[s.shift+1:s.shift+21].ATR()) &&
-// 		history.WithinRange(ma[1][s.shift], bars[s.shift].O(), bars[s.shift+1:s.shift+21].ATR()) {
+		//history.WithinRange(ma[1][s.shift], ma[2][s.shift], 2*bars[s.shift+1:s.shift+21].ATR()) &&
+		history.WithinRange(ma[1][s.shift], bars[s.shift].O(), bars[s.shift+1:s.shift+21].ATR()) {
 
-// 		event.Type = history.MARKET_BUY
-// 		event.Name = "POWER BUY"
-// 		event.Time = bars[0].T()
-// 		event.Price = bars[0].O()
-// 		return event, true
-// 	}
+		event.Type = history.MARKET_BUY
+		event.Name = "POWER BUY"
+		event.Time = bars[0].T()
+		event.Price = bars[0].O()
+		return event, true
+	}
 
-// 	return event, false
-// }
+	return event, false
+}
 
 // Engulfing location
 type Engulfing struct{}
@@ -331,7 +322,7 @@ type Engulfing struct{}
 func (s *Engulfing) Run(symbol string, bars history.Bars) (history.Event, bool) {
 	var event = history.NewEvent(symbol)
 
-	if 210 > len(bars) {
+	if 21 > len(bars) {
 		return event, false
 	}
 	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
@@ -342,41 +333,37 @@ func (s *Engulfing) Run(symbol string, bars history.Bars) (history.Event, bool) 
 	}
 
 	// --------------
+	SMA := bars[0:20].SMA(history.C)
+	ATR := bars[1:4].ATR()
 
-	// 0=8, 1=20, 2=50
-	var ma = make(map[int][]float64, 3)
-	for i := 0; i < 10; i++ {
-		for n, v := range []float64{
-			bars[i : i+8].SMA(3),
-			bars[i : i+20].SMA(3),
-			bars[i : i+200].SMA(3)} {
-			ma[n] = append(ma[n], v)
-		}
-	}
-
-	var slope = make(map[int][]float64, 3)
-	for i := 0; i < 10; i++ {
-		for n, v := range []float64{
-			(bars[i:i+8].SMA(3) / bars[i+1:i+9].SMA(3)) - 1,
-			(bars[i:i+20].SMA(3) / bars[i+1:i+21].SMA(3)) - 1,
-			(bars[i:i+200].SMA(3) / bars[i+1:i+201].SMA(3)) - 1} {
-			slope[n] = append(slope[n], v)
-		}
-	}
-
-	// buysignal
+	// MARKET_BUY
 	if bars.LastBearIdx() < 5 &&
-		//bars[1].Bear() &&
+		bars[0].C()-SMA < 2*ATR &&
 		bars[0].C() > bars[bars.LastBearIdx()].H() &&
-		//slope[1][0] > 0 &&
-		ma[1][0] > ma[2][0] &&
-		//history.WithinRange(ma[1][0], bars[0].C(), bars[1:20].ATR()) &&
-		bars[0].L() <= ma[1][0] && bars[0].C() > ma[1][0] {
+		bars[0].O() < bars[bars.LastBearIdx()].H() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() > SMA {
 
 		event.Type = history.MARKET_BUY
 		event.Name = "Engulfing"
 		event.Time = bars[0].T()
-		event.Price = bars[0].O()
+		event.Price = bars[0].C()
+		return event, true
+	}
+
+	// MARKET_SELL
+	if bars.LastBullIdx() < 5 &&
+		bars[0].O() > bars[bars.LastBullIdx()].L() &&
+		bars[0].C() < bars[bars.LastBullIdx()].L() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() < SMA {
+
+		event.Type = history.MARKET_SELL
+		event.Name = "Engulfing"
+		event.Time = bars[0].T()
+		event.Price = bars[0].C()
 		return event, true
 	}
 
@@ -389,7 +376,6 @@ func (s *Engulfing) Run(symbol string, bars history.Bars) (history.Event, bool) 
 // // Event Signals
 // func (s *test) Run(symbol string, bars history.Bars) (history.Event, bool) {
 // 	event := history.NewEvent(symbol)
-// 	// event.Name =
 // 	// filter symbols with less bars and price prefix is equals "0.00000"
 // 	if 210 > len(bars) {
 // 		return event, false

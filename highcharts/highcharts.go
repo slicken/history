@@ -48,7 +48,7 @@ func DefaultChart() *Chart {
 	return &Chart{
 		Type:      Candlestick,
 		Volume:    true,
-		Shadow:    true,
+		Shadow:    false,
 		SetWidth:  "56%",
 		SetHeight: "72%",
 		SetMargin: "25px",
@@ -56,7 +56,7 @@ func DefaultChart() *Chart {
 }
 
 /*
-highcharts series
+	highcharts series
 
 var ohlc = `[
 {"x":1547337600000,"open":3584.1,"high":3611.1,"low":3441.3,"close":3476.81,dataLabels: { enabled: true }},
@@ -411,7 +411,6 @@ func (c *Chart) BuildCharts(m map[string]history.Bars, events map[string]history
 			if err != nil {
 				log.Println(err)
 			}
-
 			// append to slice
 			buf = append(buf, chart...)
 		}

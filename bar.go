@@ -87,22 +87,14 @@ func (b Bar) Mode(mode Price) float64 {
 type Price int
 
 const (
-	// O price open
-	O Price = iota
-	// H price open
-	H
-	// L price high
-	L
-	// C price close
-	C
-	// HL2 price volume
-	HL2
-	// HLC3 price median
-	HLC3
-	// OHLC4 price median
-	OHLC4
-	// V price volume
-	V
+	O     Price = iota // O price open
+	H                  // H price open
+	L                  // L price high
+	C                  // C price close
+	HL2                // HL2 price volume
+	HLC3               // HLC3 price median
+	OHLC4              // OHLC4 price median
+	V                  // V price volume
 )
 
 // Timeframe
