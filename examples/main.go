@@ -18,7 +18,7 @@ var (
 	hist          = new(history.History)       // main struct to control bars data
 	eventListener = new(history.EventListener) // we add our strategy to eventlistener witch is looking at the hist
 	events        = new(history.Events)        // we store our events here, if we want to save them
-	strategy      = &Engulfing{}               // engulfing strategy (create you owrn strategies)
+	strategy      = &test{}                    // engulfing strategy (create you owrn strategies)
 	chart         = highcharts.DefaultChart()  // we use highcharts for plotting
 
 	config = new(Config) // store argument configurations
@@ -70,6 +70,38 @@ func main() {
 		}
 	}
 
+	// var portfolio history.Portfolio
+
+	// var ev1 history.Event
+	// ev1.Name = "Test Buy"
+	// ev1.Symbol = "BTCUSDT1d"
+	// ev1.Price = 30122.2
+	// ev1.Type = history.MARKET_SELL
+	// ev1.Time = time.Now().Add(-3 * 24 * time.Hour)
+
+	// fmt.Println("initial", 1000)
+	// size := 1000 / ev1.Price
+	// fmt.Println("size", size)
+	// pos1 := history.MakePosition(ev1, size)
+
+	// // now
+	// price := 40002.1
+	// _, _ = portfolio.Add(pos1)
+
+	// // get position
+	// n, lpos := portfolio.Open.GetLast("BTCUSDT1d")
+	// // close position index
+	// ok := portfolio.Close(n, price, time.Now())
+	// if !ok {
+	// 	fmt.Println("ERROR Close")
+	// }
+
+	// _ = lpos
+	// _ = n
+	// _ = portfolio
+
+	// os.Exit(0)
+
 	log.Println("initalizing...")
 	// ----------------------------------------------------------------------------------------------
 	// add a downloader to the interface.
@@ -103,7 +135,7 @@ func main() {
 	// highchart settings (highcharts)
 	// ----------------------------------------------------------------------------------------------
 	// chart.Type = highcharts.ChartType(highcharts.Spline)
-	chart.SMA = []int{10, 20}
+	chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
@@ -360,7 +392,7 @@ func (s *Engulfing) Run(symbol string, bars history.Bars) (history.Event, bool) 
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() < SMA {
 
-		event.Type = history.MARKET_SELL
+		event.Type = history.CLOSE_BUY
 		event.Name = "Engulfing"
 		event.Time = bars[0].T()
 		event.Price = bars[0].C()
@@ -370,34 +402,59 @@ func (s *Engulfing) Run(symbol string, bars history.Bars) (history.Event, bool) 
 	return event, false
 }
 
-// // test strategy
-// type test struct{}
+// test strategy
+type test struct{}
 
-// // Event Signals
-// func (s *test) Run(symbol string, bars history.Bars) (history.Event, bool) {
-// 	event := history.NewEvent(symbol)
-// 	// filter symbols with less bars and price prefix is equals "0.00000"
-// 	if 210 > len(bars) {
-// 		return event, false
-// 	}
-// 	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
-// 		if price[:7] == "0.00000" {
-// 			return event, false
-// 		}
-// 	}
-// 	//
-// 	//
-// 	//
-// 	if bars[2].Bullish() && bars[2].Body() > bars[3:13].ATR() && bars[2].Range() < 4*bars[3:13].ATR() &&
-// 		bars[1].Bear() && bars[1].BodyLow() > (bars[2].BodyLow()+bars[2].BodyHigh())*0.3 {
+// Event Signals
+func (s *test) Run(symbol string, bars history.Bars) (history.Event, bool) {
+	var event = history.NewEvent(symbol)
 
-// 		event.Type = history.MARKET_BUY
-// 		event.Name = "RBI"
-// 		event.Time = bars[0].T()
-// 		event.Price = bars[0].O()
-// 		return event, true
-// 	}
+	if 260 > len(bars) {
+		return event, false
+	}
+	// EXCLUDE SYMBOLS PRICES MATCHING PREFEX "0.000000xx"
+	if price := strconv.FormatFloat(bars[0].O(), 'f', -1, 64); len(price) >= 7 {
+		if price[:7] == "0.00000" {
+			return event, false
+		}
+	}
 
-// 	return event, false
+	// --------------
+	lookback := 50
+	// 0=20, 1=200
+	var ma = make(map[int][]float64, 3)
+	for i := 0; i < lookback; i++ {
+		for n, v := range []float64{bars[i : i+20].SMA(3), bars[i : i+200].SMA(3)} {
+			ma[n] = append(ma[n], v)
+		}
+	}
 
-// }
+	recentCrossUp := false
+	for i := 0; i < lookback-1; i++ {
+		if ma[0][i] > ma[1][i] && (ma[0][i+1] < ma[1][i+1]) {
+			recentCrossUp = true
+		}
+	}
+
+	if recentCrossUp &&
+		bars[0].Bullish() &&
+		// bars[0].Range() > bars[0:10].ATR() &&
+		bars[0].O()-bars[1:7].Lowest(history.O) < bars[1:21].ATR() &&
+		bars[0].L() <= ma[0][0] && bars[0].C() > ma[0][0] &&
+		bars[0].C() > bars[1:4].Highest(history.H) &&
+
+		//ma[0][1] > ma[1][1] &&
+		// (ma[0][0] > ma[0][1]) || (ma[1][0] > ma[1][1]) &&
+
+		history.WithinRange(ma[0][0], ma[1][0], 2*bars[1:21].ATR()) {
+		// history.WithinRange(ma[0][0], bars[0].O(), bars[1:21].ATR()) {
+
+		event.Type = history.MARKET_BUY
+		event.Name = "TEST"
+		event.Time = bars[0].T()
+		event.Price = bars[0].C()
+		return event, true
+	}
+
+	return event, false
+}

@@ -55,15 +55,21 @@ var EventTypes = map[EventType]string{
 
 // NewEvent
 func NewEvent(symbol string) Event {
-	return Event{Symbol: symbol}
+	pair, tf := SplitSymbol(symbol)
+	return Event{Symbol: symbol, Pair: pair, Timeframe: tf}
 }
 
-// Returns true if this is a buy event
+// Returns true if event is of any type buy
 func (event *Event) IsBuy() bool {
-	if event.Type == 0 || event.Type == 2 || event.Type == 4 {
+	if event.Type == MARKET_BUY || event.Type == LIMIT_BUY || event.Type == CLOSE_BUY {
 		return true
 	}
 	return false
+}
+
+// Returns true if event is of any type buy
+func (event *Event) StringType() string {
+	return EventTypes[event.Type]
 }
 
 /*

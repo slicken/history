@@ -170,11 +170,11 @@ func (h *History) Unload(symbol string) error {
 	h.Lock()
 	defer h.Unlock()
 
-	pair, tf := SplitPairTf(symbol)
+	pair, tf := SplitSymbol(symbol)
 	if tf == "" {
 		// delete all timeframes of pair if symbol if missing timeframe
 		for _symbol := range h.bars {
-			_pair, _ := SplitPairTf(_symbol)
+			_pair, _ := SplitSymbol(_symbol)
 			if _pair == pair {
 				delete(h.bars, _symbol)
 			}
@@ -323,7 +323,7 @@ func (h *History) Update(enabled bool) {
 func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 	defer wg.Done()
 
-	pair, tf := SplitPairTf(symbol)
+	pair, tf := SplitSymbol(symbol)
 
 	var err error
 	var bars Bars

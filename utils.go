@@ -2,7 +2,6 @@ package history
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ func (h *History) SetDataDir(v string) {
 
 // StoredSymbols
 func StoredSymbols() ([]string, error) {
-	files, err := ioutil.ReadDir(datadir)
+	files, err := os.ReadDir(datadir)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +44,7 @@ func ReadBars(symbol string) (Bars, error) {
 	filename := strings.ToLower(symbol) + ".json"
 	filepath := filepath.Join(datadir, filename)
 
-	b, err := ioutil.ReadFile(filepath)
+	b, err := os.ReadFile(filepath)
 	if err != nil {
 		return bars, err
 	}
@@ -83,7 +82,7 @@ func WriteBars(symbol string, bars Bars) error {
 	filename := strings.ToLower(symbol) + ".json"
 	filepath := filepath.Join(datadir, filename)
 
-	return ioutil.WriteFile(filepath, b, 0644)
+	return os.WriteFile(filepath, b, 0644)
 }
 
 // calculates how many bars between time.now and time.last
@@ -92,8 +91,8 @@ func calcLimit(last time.Time, period time.Duration) int {
 	return -int(t / period)
 }
 
-// SplitPairTf returns pair and timeframe
-func SplitPairTf(s string) (pair string, tf string) {
+// Splits Sumbol to Pair and Timeframe
+func SplitSymbol(s string) (pair string, tf string) {
 	// split pair and timeframe
 	for i := len(s); i >= 0; i-- {
 		pair = s[:len(s)-i]
