@@ -21,12 +21,12 @@ type Bar struct {
 
 func (b Bar) MarshalJSON() ([]byte, error) {
 	m := map[string]interface{}{
-		"Time":   b.Time.Unix(),
-		"Open":   b.Open,
-		"High":   b.High,
-		"Low":    b.Low,
-		"Close":  b.Close,
-		"Volume": b.Volume,
+		"time":   b.Time.Unix(),
+		"open":   b.Open,
+		"high":   b.High,
+		"low":    b.Low,
+		"close":  b.Close,
+		"volume": b.Volume,
 	}
 
 	return json.Marshal(m)
@@ -39,20 +39,20 @@ func (b *Bar) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	b.Time = time.Unix(int64(m["Time"].(float64)), 0)
-	if b.Open, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Open"]), 64); err != nil {
+	b.Time = time.Unix(int64(m["time"].(float64)), 0)
+	if b.Open, err = strconv.ParseFloat(fmt.Sprintf("%v", m["open"]), 64); err != nil {
 		return err
 	}
-	if b.High, err = strconv.ParseFloat(fmt.Sprintf("%v", m["High"]), 64); err != nil {
+	if b.High, err = strconv.ParseFloat(fmt.Sprintf("%v", m["high"]), 64); err != nil {
 		return err
 	}
-	if b.Low, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Low"]), 64); err != nil {
+	if b.Low, err = strconv.ParseFloat(fmt.Sprintf("%v", m["low"]), 64); err != nil {
 		return err
 	}
-	if b.Close, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Close"]), 64); err != nil {
+	if b.Close, err = strconv.ParseFloat(fmt.Sprintf("%v", m["close"]), 64); err != nil {
 		return err
 	}
-	if b.Volume, err = strconv.ParseFloat(fmt.Sprintf("%v", m["Volume"]), 64); err != nil {
+	if b.Volume, err = strconv.ParseFloat(fmt.Sprintf("%v", m["volume"]), 64); err != nil {
 		return err
 	}
 

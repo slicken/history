@@ -118,6 +118,14 @@ func merge(old, new Bars) Bars {
 	return merged
 }
 
+func (bars Bars) JSON() []byte {
+	json, err := json.Marshal(bars)
+	if err != nil {
+		return nil
+	}
+	return json
+}
+
 // EXPORT_QUERY defines how bars should be exported using SQL-like syntax
 // Example queries:
 // TradingView compatible format (default):
