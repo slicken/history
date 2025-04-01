@@ -115,6 +115,26 @@ func (bars Bars) StreamBar() <-chan Bar {
 	return c
 }
 
+// StreaBarDuration bars
+func (bars Bars) StreamBarDuration(duration time.Duration) <-chan Bar {
+	c := make(chan Bar, 1)
+
+	if len(bars) == 0 {
+		defer close(c)
+		return c
+	}
+
+	go func() {
+		for i := len(bars) - 1; i >= 0; i-- {
+			time.Sleep(duration)
+			c <- bars[i]
+		}
+		close(c)
+	}()
+
+	return c
+}
+
 // StreamBar Interval
 func (bars Bars) StreamBarInterval(start, end time.Time, interval time.Duration) <-chan Bar {
 	c := make(chan Bar, 1)
