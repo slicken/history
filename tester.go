@@ -24,7 +24,15 @@ func (hist *History) Test(strategy Strategy, start, end time.Time) (Events, erro
 	log.Printf("[TEST] %s [%v ==> %v]\n", fmt.Sprintf("%T", strategy)[6:], start.Format(dt_stamp), end.Format(dt_stamp))
 
 	for symbol, bars := range hist.bars {
-		for streamedBars := range bars.StreamInterval(start, end, bars.Period()) {
+		// Create a slice to hold bars for strategy processing
+		var streamedBars Bars
+
+		// Stream bars one by one
+		for bar := range bars.StreamInterval(start, end, bars.Period()) {
+			// Prepend the new bar to maintain correct order
+			streamedBars = append(Bars{bar}, streamedBars...)
+
+			// Run strategy with accumulated bars
 			if event, ok := strategy.Run(symbol, streamedBars); ok {
 				events.Add(event)
 			}

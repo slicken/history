@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -39,7 +40,7 @@ type Config struct {
 }
 
 func main() {
-	// log.SetOutput(io.Discard)
+	log.SetOutput(io.Discard)
 	// ----------------------------------------------------------------------------------------------
 	// shutdown properly
 	// ----------------------------------------------------------------------------------------------
