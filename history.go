@@ -307,13 +307,11 @@ func (h *History) Update(enabled bool) {
 				// calc how many new bars we can download from our last bar
 				if len(h.bars[symbol]) > 0 {
 					limit = calcLimit(h.bars[symbol].LastBar().T(), h.bars[symbol].Period())
-					if limit > maxlimit {
-						limit = maxlimit
-					}
 				}
 
 				if limit > 1 {
 					wg.Add(1)
+					fmt.Println("h.download", symbol, limit)
 					go h.download(symbol, limit, &wg)
 				}
 			}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,51 +19,115 @@ type Binance struct{}
 
 // GetKlines new data from Binance exchange
 func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error) {
+	var allBars history.Bars
+	seenTimes := make(map[int64]bool)
+
+	// Calculate the batch size for the API request
+	batchSize := limit
+	if batchSize > 1000 {
+		batchSize = 1000
+	}
+
+	// For first request, don't specify endTime to get most recent bars
 	path := fmt.Sprintf(
-		"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&limit=%v",
-		strings.ToUpper(pair), strings.ToLower(timeframe), limit)
+		"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&limit=%d",
+		strings.ToUpper(pair), strings.ToLower(timeframe), batchSize)
 
-	req, _ := http.NewRequest("GET", path, nil)
-	req.Header.Add("Accept", "application/json")
+	for {
+		resp, err := http.Get(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get klines: %w", err)
+		}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+		var data [][]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+
+		fmt.Println("received", len(data), "bars")
+
+		if len(data) == 0 {
+			break // No more data available
+		}
+
+		// Convert batch to Bars
+		batchBars := make(history.Bars, 0, len(data))
+		var oldestTimestamp int64 = time.Now().UnixMilli()
+		for _, kline := range data {
+			// Stop if we have enough bars
+			if len(allBars) >= limit {
+				break
+			}
+
+			timestamp := int64(kline[0].(float64))
+			// Track oldest timestamp in this batch
+			if timestamp < oldestTimestamp {
+				oldestTimestamp = timestamp
+			}
+
+			// Skip if we've already seen this timestamp
+			if seenTimes[timestamp] {
+				continue
+			}
+			seenTimes[timestamp] = true
+
+			t := time.Unix(timestamp/1000, 0)
+			open, _ := strconv.ParseFloat(kline[1].(string), 64)
+			high, _ := strconv.ParseFloat(kline[2].(string), 64)
+			low, _ := strconv.ParseFloat(kline[3].(string), 64)
+			close, _ := strconv.ParseFloat(kline[4].(string), 64)
+			volume, _ := strconv.ParseFloat(kline[5].(string), 64)
+
+			bar := history.Bar{
+				Time:   t,
+				Open:   open,
+				High:   high,
+				Low:    low,
+				Close:  close,
+				Volume: volume,
+			}
+			batchBars = append(batchBars, bar)
+		}
+
+		// Sort batch in descending order
+		sort.SliceStable(batchBars, func(i, j int) bool {
+			return batchBars[i].Time.After(batchBars[j].Time)
+		})
+
+		// Append this batch
+		allBars = append(allBars, batchBars...)
+
+		// Stop if we have enough bars or no more data
+		if len(allBars) >= limit || len(data) < batchSize {
+			break
+		}
+
+		// Calculate remaining bars needed
+		remaining := limit - len(allBars)
+		if remaining < batchSize {
+			batchSize = remaining
+		}
+
+		// Get next batch using endTime from oldest bar
+		path = fmt.Sprintf(
+			"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&limit=%d&endTime=%d",
+			strings.ToUpper(pair), strings.ToLower(timeframe), batchSize, oldestTimestamp-1)
+
+		// Respect rate limits
+		time.Sleep(100 * time.Millisecond)
 	}
-	defer resp.Body.Close()
-	bytes, _ := io.ReadAll(resp.Body)
 
-	var raw [][]interface{}
-	if err := json.Unmarshal(bytes, &raw); err != nil {
-		return nil, err
+	// Ensure we don't return more bars than requested
+	if len(allBars) > limit {
+		allBars = allBars[:limit]
 	}
 
-	bars := make(history.Bars, 0, len(raw))
-	for _, v := range raw {
-		bar := history.Bar{
-			Time: time.Unix(int64(v[0].(float64))/1000, 0),
-		}
-
-		if bar.Open, err = strconv.ParseFloat(v[1].(string), 64); err != nil {
-			log.Printf("error parsing Open: %v", err)
-		}
-		if bar.High, err = strconv.ParseFloat(v[2].(string), 64); err != nil {
-			log.Printf("error parsing High: %v", err)
-		}
-		if bar.Low, err = strconv.ParseFloat(v[3].(string), 64); err != nil {
-			log.Printf("error parsing Low: %v", err)
-		}
-		if bar.Close, err = strconv.ParseFloat(v[4].(string), 64); err != nil {
-			log.Printf("error parsing Close: %v", err)
-		}
-		if bar.Volume, err = strconv.ParseFloat(v[5].(string), 64); err != nil {
-			log.Printf("error parsing Volume: %v", err)
-		}
-
-		bars = append(history.Bars{bar}, bars...)
+	if len(allBars) > 0 {
+		fmt.Printf("newest bar time: %v\n", allBars[0].Time.Format("2006-01-02 15:04:05"))
 	}
-
-	return bars, nil
+	return allBars, nil
 }
 
 // MakeSymbolMultiTimeframe helper func for binance that makes slice of requested symbols and timeframes
@@ -104,17 +169,7 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 
 // ExchangeInfo holds the full exchange information type
 type ExchangeInfo struct {
-	Code       int    `json:"code"`
-	Msg        string `json:"msg"`
-	Timezone   string `json:"timezone"`
-	Servertime int64  `json:"serverTime"`
-	RateLimits []struct {
-		RateLimitType string `json:"rateLimitType"`
-		Interval      string `json:"interval"`
-		Limit         int    `json:"limit"`
-	} `json:"rateLimits"`
-	ExchangeFilters interface{} `json:"exchangeFilters"`
-	Symbols         []struct {
+	Symbols []struct {
 		Symbol             string   `json:"symbol"`
 		Status             string   `json:"status"`
 		BaseAsset          string   `json:"baseAsset"`

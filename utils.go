@@ -1,13 +1,11 @@
 package history
 
 import (
-	"os"
 	"time"
 )
 
 var (
-	maxlimit = 1000
-	datadir  = "data"
+	maxlimit = 3000
 )
 
 // Setmaxlimit limits new data request
@@ -15,22 +13,31 @@ func (h *History) SetMaxLimit(v int) {
 	maxlimit = v
 }
 
-// Setdatadir to store files in
-func (h *History) SetDataDir(v string) {
-	datadir = v
-}
-
-// StoredSymbols
-func StoredSymbols() ([]string, error) {
-	files, err := os.ReadDir(datadir)
+// StoredSymbols returns all unique symbols from the database
+func (h *History) StoredSymbols() ([]string, error) {
+	rows, err := h.db.Query(`
+		SELECT DISTINCT symbol 
+		FROM bars 
+		ORDER BY symbol ASC
+	`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	var symbols []string
-	for _, f := range files {
-		symbols = append(symbols, f.Name()[:len(f.Name())-5])
+	for rows.Next() {
+		var symbol string
+		if err := rows.Scan(&symbol); err != nil {
+			return nil, err
+		}
+		symbols = append(symbols, symbol)
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return symbols, nil
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -40,7 +39,6 @@ type Config struct {
 }
 
 func main() {
-	log.SetOutput(io.Discard)
 	// ----------------------------------------------------------------------------------------------
 	// shutdown properly
 	// ----------------------------------------------------------------------------------------------
@@ -65,12 +63,6 @@ Options:
   -limit int                  Limit bars (0=off) (default 300)
   -ctype string               Chart type: candlestick|ohlc|line|spline (default 'candlestick')
   -force string               Force one symbol, e.g., 'BTC/USDT'
-
-URLs:
-http://127.0.0.1/             Standard
-http://127.0.0.1/test         Test strategy on history
-http://127.0.0.1/ptest        Test strategy on history with portfolio
-http://127.0.0.1/top/<days>   Show top preformers for nr of days
 
   `, os.Args[0])
 	}
@@ -102,33 +94,19 @@ http://127.0.0.1/top/<days>   Show top preformers for nr of days
 	if err != nil {
 		log.Fatal("could not create history:", err)
 	}
-	// ----------------------------------------------------------------------------------------------
-	// add a downloader to the interface.
-	// ----------------------------------------------------------------------------------------------
-	hist.Downloader = &Binance{}
-	// ----------------------------------------------------------------------------------------------
-	// update new history bars when there is a fresh bar for your symbol
-	// ----------------------------------------------------------------------------------------------
-	hist.Update(true)
-	// ----------------------------------------------------------------------------------------------
-	// load symbols. use a list to load multiple.
-	// ----------------------------------------------------------------------------------------------
-	hist.Load(symbols...)
-	// ----------------------------------------------------------------------------------------------
-	// limit bars
-	// ----------------------------------------------------------------------------------------------
+	// limit bars (IMPORTANT or maxlimit will be used)
 	hist.Limit(config.limit)
-	// ----------------------------------------------------------------------------------------------
+	// add a downloader to the interface.
+	hist.Downloader = &Binance{}
+	// update new history bars when there is a fresh bar for your symbol
+	hist.Update(true)
+	// load symbols. use a list to load multiple.
+	hist.Load(symbols...)
 	// add strategy to event listener
-	// ----------------------------------------------------------------------------------------------
 	eventListener.Add(strategy)
-	// ----------------------------------------------------------------------------------------------
 	// start event listener
-	// ----------------------------------------------------------------------------------------------
 	eventListener.Start(hist, events)
-	// ----------------------------------------------------------------------------------------------
 	// highchart settings (highcharts)
-	// ----------------------------------------------------------------------------------------------
 	// chart.Type = highcharts.ChartType(highcharts.Spline)
 	chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
