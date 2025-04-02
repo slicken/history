@@ -330,6 +330,22 @@ func (h *History) Update(enabled bool) {
 	}
 }
 
+// ReprocessHistory downloads and overwrites bars for all loaded symbols with specified limit
+func (h *History) ReprocessHistory(limit int) error {
+	log.Println("reprocessing history")
+
+	h.RLock()
+	var wg sync.WaitGroup
+	for symbol := range h.bars {
+		wg.Add(1)
+		go h.download(symbol, limit, &wg)
+	}
+	h.RUnlock()
+
+	wg.Wait()
+	return nil
+}
+
 // download and check validity before adding to history
 func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 	defer wg.Done()
@@ -353,7 +369,7 @@ func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 		h.Lock()
 		delete(h.bars, symbol)
 		h.Unlock()
-		log.Println(symbol, "outdated")
+		log.Println(symbol, "outdated - unloading from history.")
 		return nil
 	}
 	// add to history

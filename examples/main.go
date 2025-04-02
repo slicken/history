@@ -94,17 +94,25 @@ Options:
 	if err != nil {
 		log.Fatal("could not create history:", err)
 	}
-	// limit bars (IMPORTANT or maxlimit will be used)
-	hist.Limit(config.limit)
+	// ----------------------------------------------------------------------------------------------
 	// add a downloader to the interface.
+	// ----------------------------------------------------------------------------------------------
 	hist.Downloader = &Binance{}
-	// update new history bars when there is a fresh bar for your symbol
-	hist.Update(true)
+	// ----------------------------------------------------------------------------------------------
+	// limit bars
+	// ----------------------------------------------------------------------------------------------
+	hist.Limit(config.limit)
+	// ----------------------------------------------------------------------------------------------
 	// load symbols. use a list to load multiple.
+	// ----------------------------------------------------------------------------------------------
 	hist.Load(symbols...)
+	// ----------------------------------------------------------------------------------------------
 	// add strategy to event listener
+	// ----------------------------------------------------------------------------------------------
 	eventListener.Add(strategy)
+	// ----------------------------------------------------------------------------------------------
 	// start event listener
+	// ----------------------------------------------------------------------------------------------
 	eventListener.Start(hist, events)
 	// highchart settings (highcharts)
 	// chart.Type = highcharts.ChartType(highcharts.Spline)

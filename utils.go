@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	maxlimit = 3000
+	maxlimit = 1000
 )
 
 // Setmaxlimit limits new data request

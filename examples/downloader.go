@@ -46,8 +46,6 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 		}
 		resp.Body.Close()
 
-		fmt.Println("received", len(data), "bars")
-
 		if len(data) == 0 {
 			break // No more data available
 		}
@@ -124,9 +122,6 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 		allBars = allBars[:limit]
 	}
 
-	if len(allBars) > 0 {
-		fmt.Printf("newest bar time: %v\n", allBars[0].Time.Format("2006-01-02 15:04:05"))
-	}
 	return allBars, nil
 }
 
