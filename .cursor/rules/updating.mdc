@@ -1,9 +1,0 @@
----
-description: updating code rules
-globs: *
-alwaysApply: true
----
-# Important rules to follow when updating code
-- Never change functions or code functionality you are not told to update.
-- Only update what you are told.
-- Never build or run .go code.
