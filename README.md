@@ -127,8 +127,6 @@ func main() {
 
 ### History (history.go)
 
-Core data management and persistence:
-
 ```go
 type History struct {
     Downloader           // Interface for data downloading
@@ -138,11 +136,16 @@ type History struct {
 func New() (*History, error)                                    // Create new History instance with SQLite DB
 func (h *History) GetBars(symbol string) Bars                   // Get bars for a symbol
 func (h *History) Map() map[string]Bars                        // Get all bars
+func (h *History) MinPeriod() time.Duration                    // Get minimum period across all histories
+func (h *History) FirstTime() time.Time                        // Get earliest time across all histories
+func (h *History) LastTime() time.Time                         // Get latest time across all histories
 func (h *History) Load(symbols ...string) error                // Load symbols from database
 func (h *History) Add(symbol string, bars Bars) error          // Add new bars to history
 func (h *History) Update(enabled bool)                         // Enable/disable auto-updates
 func (h *History) Limit(length int) *History                   // Limit data length
 func (h *History) LimitTime(start, end time.Time) *History     // Limit data to time range
+func (h *History) Unload(symbol string) error                  // Remove symbol from memory
+func (h *History) ReprocessHistory(limit int) error            // Redownload and process history
 
 // Database Operations
 func (h *History) StoredSymbols() ([]string, error)           // Get all symbols from database
@@ -151,8 +154,6 @@ func (h *History) WriteBars(symbol string, bars Bars) error    // Save bars to d
 ```
 
 ### Bar (bar.go)
-
-Price data structure:
 
 ```go
 type Bar struct {
@@ -165,12 +166,19 @@ type Bar struct {
 }
 
 // Methods
-func (b Bar) Mode(mode Price) float64   // Get price based on mode (O, H, L, C, etc.)
+func (b Bar) Mode(mode Price) float64   // Get price based on mode
+func (b Bar) T() time.Time              // Get bar time
+func (b Bar) O() float64                // Get open price
+func (b Bar) H() float64                // Get high price
+func (b Bar) L() float64                // Get low price
+func (b Bar) C() float64                // Get close price
+func (b Bar) V() float64                // Get volume
+func (b Bar) Range() float64            // Get price range (high - low)
+func (b Bar) MarshalJSON() ([]byte, error)    // JSON marshaling
+func (b *Bar) UnmarshalJSON(data []byte) error // JSON unmarshaling
 ```
 
 ### Bars (bars.go)
-
-Collection of price bars with analysis methods:
 
 ```go
 type Bars []Bar
@@ -183,88 +191,75 @@ func (bars Bars) FirstBar() Bar                              // Get first bar
 func (bars Bars) LastBar() Bar                               // Get last bar
 func (bars Bars) Find(dt time.Time) (int, Bar)              // Find bar at specific time
 func (bars Bars) TimeSpan(start, end time.Time) Bars        // Get bars within time range
+func (bars Bars) MarshalJSON() ([]byte, error)              // JSON marshaling
+func (bars *Bars) UnmarshalJSON(data []byte) error          // JSON unmarshaling
+
+// Time Functions
+func (bars Bars) T() []time.Time                            // Get all bar times
+func (bars Bars) FirstTime() time.Time                      // Get first bar time
+func (bars Bars) LastTime() time.Time                       // Get last bar time
+
+// Price Functions
+func (bars Bars) O() []float64                             // Get all open prices
+func (bars Bars) H() []float64                             // Get all high prices
+func (bars Bars) L() []float64                             // Get all low prices
+func (bars Bars) C() []float64                             // Get all close prices
+func (bars Bars) V() []float64                             // Get all volumes
 ```
 
 ### Events (events.go)
 
-Trading signals and event management:
-
 ```go
 type Event struct {
-    Symbol string    // Trading symbol
-    Name   string    // Event name
-    Text   string    // Additional information
-    Type   EventType // Event type
-    Time   time.Time // Event time
-    Price  float64   // Price at event
-    Size   float64   // Position size
+    Symbol string    
+    Name   string    
+    Text   string    
+    Type   EventType 
+    Time   time.Time 
+    Price  float64   
+    Size   float64   
 }
 
 type Events []Event
 
 // Methods
-func (events Events) Sort() Events
-func (events Events) Symbol(symbol string) Events
-func (events Events) Exists(event Event) bool
-func (events *Events) Add(event Event) bool
+func NewEvent(symbol string) Event                          // Create new event
+func (events Events) Sort() Events                         // Sort events by time
+func (events Events) Symbol(symbol string) Events          // Filter events by symbol
+func (events Events) Exists(event Event) bool              // Check if event exists
+func (events Events) FirstEvent() Event                    // Get first event
+func (events Events) LastEvent() Event                     // Get last event
+func (events Events) Find(dt time.Time) (int, Event)      // Find event at time
+func (events *Events) Add(event Event) bool               // Add new event
+func (events *Events) Delete(event Event) bool            // Delete event
+func (events Events) Map() map[string]Events              // Map events by symbol
 ```
 
 ### EventHandler (eventhandler.go)
-
-Strategy execution and event processing:
 
 ```go
 type EventHandler struct {
     handlers   map[EventType][]EventCallback
     strategies []Strategy
+    running    bool
 }
+
+type EventCallback func(Event) error
 
 // Core Functions
-func NewEventHandler() *EventHandler
-func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback)
-func (eh *EventHandler) AddStrategy(strategy Strategy) error
-func (eh *EventHandler) Start(hist *History, events *Events) error
+func NewEventHandler() *EventHandler                       // Create new event handler
+func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback)   // Subscribe to event type
+func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback) // Unsubscribe from event type
+func (eh *EventHandler) Handle(event Event) error         // Handle single event
+func (eh *EventHandler) HandleEvents(events Events) error // Handle multiple events
+func (eh *EventHandler) Clear()                          // Clear all handlers
+func (eh *EventHandler) Start(hist *History, events *Events) error  // Start event processing
+func (eh *EventHandler) Stop() error                     // Stop event processing
+func (eh *EventHandler) AddStrategy(strategy Strategy) error        // Add strategy
+func (eh *EventHandler) RemoveStrategy(strategy Strategy) error     // Remove strategy
 ```
-
-### Utils (utils.go)
-
-Utility functions:
-
-```go
-func (h *History) SetMaxLimit(v int)                         // Set maximum limit for data requests
-func SplitSymbol(s string) (pair string, tf string)         // Split symbol into pair and timeframe
-func ToUnixTime(t time.Time) int64                          // Convert time to Unix timestamp
-```
-
-### Streamer (streamer.go)
-
-Data streaming capabilities:
-
-```go
-type Streamer interface {
-    <-chan Bar
-}
-
-func (bars Bars) Stream() <-chan Bar
-func (bars Bars) StreamDuration(duration time.Duration) <-chan Bar
-func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bar
-```
-
-### Tester (tester.go) - 🚧 In Development
-
-Backtesting engine for strategy testing.
-
-### Strategy (strategy.go) - 🚧 In Development
-
-Strategy interface and base implementations.
-
-### Portfolio (portfolio.go) - 🚧 In Development
-
-Portfolio management and position tracking.
 
 ### Indicators (indicators.go)
-
-Technical analysis functions:
 
 ```go
 // Moving Averages
@@ -278,8 +273,101 @@ func (bars Bars) StDev(mode Price) float64  // Standard Deviation
 func (bars Bars) Range() float64            // Price Range
 
 // Price Analysis
-func (bars Bars) Highest(mode Price) float64
-func (bars Bars) Lowest(mode Price) float64
+func (bars Bars) Highest(mode Price) float64    // Highest price in period
+func (bars Bars) HighestIdx(mode Price) int     // Index of highest price
+func (bars Bars) Lowest(mode Price) float64     // Lowest price in period
+func (bars Bars) LowestIdx(mode Price) int      // Index of lowest price
+
+// Price Mode Constants
+const (
+    O     Price = iota  // Open
+    H                   // High
+    L                   // Low
+    C                   // Close
+    HL2                 // (High + Low) / 2
+    HLC3                // (High + Low + Close) / 3
+    OHLC4               // (Open + High + Low + Close) / 4
+    V                   // Volume
+)
+```
+
+### Utils (utils.go)
+
+```go
+// History Utils
+func (h *History) SetMaxLimit(v int)                         // Set maximum limit for data requests
+
+// Symbol Utils
+func SplitSymbol(s string) (pair string, tf string)         // Split symbol into pair and timeframe
+func ToUnixTime(t time.Time) int64                          // Convert time to Unix timestamp
+func TFInterval(tf string) time.Duration                    // Convert timeframe string to duration
+```
+
+### Streamer (streamer.go)
+
+```go
+type Streamer interface {
+    <-chan Bar
+}
+
+// Streaming Methods
+func (bars Bars) Stream() <-chan Bar                                           // Stream bars sequentially
+func (bars Bars) StreamDuration(duration time.Duration) <-chan Bar            // Stream bars with delay
+func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bar  // Stream bars at intervals
+```
+
+### Tester (tester.go)
+
+```go
+type Tester struct {
+    hist     *History
+    strategy Strategy
+    events   *Events
+}
+
+// Core Functions
+func NewTester(hist *History, strategy Strategy) *Tester    // Create new tester
+func (t *Tester) Test(start, end time.Time) (*Events, error) // Run backtest
+func (t *Tester) ClearEvents()                             // Clear test events
+```
+
+### Strategy (strategy.go)
+
+```go
+type Strategy interface {
+    OnBar(symbol string, bars Bars) (Event, bool)  // Called for each new bar
+    Name() string                                  // Strategy identifier
+}
+
+type BaseStrategy struct {
+    portfolio *PortfolioManager
+}
+
+type PortfolioStrategy interface {
+    Strategy
+    GetPortfolioManager() *PortfolioManager
+}
+```
+
+### Portfolio (portfolio.go) - 🚧 In Development
+
+```go
+type Position struct {
+    Symbol     string    // Trading pair
+    Side       bool      // true for long, false for short
+    EntryTime  time.Time // When position was opened
+    EntryPrice float64   // Entry price
+    Size       float64   // Position size
+    Current    float64   // Current price
+}
+
+type PortfolioManager struct {
+    Balance   float64             // Available balance
+    Positions map[string]Position // Open positions by symbol
+}
+
+// Core Functions
+func NewPortfolioManager(initialBalance float64) *PortfolioManager
 ```
 
 ### Charts
@@ -292,10 +380,27 @@ type HighChart struct {
     SMA       []int
     EMA       []int
     Volume    bool
+    VolumeSMA int
+    Shadow    bool
+    SetWidth  string
+    SetHeight string
+    SetMargin string
 }
 
+// Chart Types
+type ChartType string
+const (
+    Candlestick ChartType = "candlestick"
+    Ohlc        ChartType = "ohlc"
+    Line        ChartType = "line"
+    Spline      ChartType = "spline"
+)
+
+// Core Functions
 func NewHighChart() *HighChart
 func (c *HighChart) BuildCharts(bars map[string]Bars, events map[string]Events) ([]byte, error)
+func MakeOHLC(bars Bars) ([]byte, error)
+func MakeVolume(bars Bars) ([]byte, error)
 ```
 
 #### TradingView (charts/tradingview.go)
