@@ -5,39 +5,30 @@ import (
 	"time"
 )
 
-// Strategy interface using Bars to output Events
-type Strategy interface {
-	Run(string, Bars) (Event, bool)
-}
-
 // Event data for specific time and price
 type Event struct {
-	Symbol    string
-	Pair      string
-	Timeframe string
-	Name      string
-	Text      string
-	Type      EventType
-	Time      time.Time
-	Price     float64
-	Size      float64
+	Symbol string    // Trading symbol (e.g. "BTC/USDT1h")
+	Name   string    // Event name (e.g. strategy name)
+	Text   string    // Additional event information
+	Type   EventType // Type of event
+	Time   time.Time // When event occurred
+	Price  float64   // Price at event
+	Size   float64   // Position size
 }
 
 // EventType
 type EventType int
 
 const (
-	MARKET_BUY EventType = iota
-	MARKET_SELL
-	LIMIT_BUY
-	LIMIT_SELL
-
-	CLOSE_BUY
-	CLOSE_SELL
-
-	MODIFY
-	NEWS
-	OTHER
+	MARKET_BUY  EventType = iota // Market buy order
+	MARKET_SELL                  // Market sell order
+	LIMIT_BUY                    // Limit buy order
+	LIMIT_SELL                   // Limit sell order
+	STOP_BUY                     // Stop buy order (can be used for breakout or stop loss buy)
+	STOP_SELL                    // Stop sell order (can be used for stop loss or take profit)
+	DELETE                       // Delete/cancel pending orders
+	NEWS                         // News event
+	OTHER                        // Other custom events
 )
 
 // EventTypes
@@ -46,30 +37,16 @@ var EventTypes = map[EventType]string{
 	MARKET_SELL: "MARKET_SELL",
 	LIMIT_BUY:   "LIMIT_BUY",
 	LIMIT_SELL:  "LIMIT_SELL",
-	CLOSE_BUY:   "CLOSE_BUY",
-	CLOSE_SELL:  "CLOSE_SELL",
-	MODIFY:      "MODIFY",
+	STOP_BUY:    "STOP_BUY",
+	STOP_SELL:   "STOP_SELL",
+	DELETE:      "DELETE",
 	NEWS:        "NEWS",
 	OTHER:       "OTHER",
 }
 
-// NewEvent
+// NewEvent creates a new event for a symbol
 func NewEvent(symbol string) Event {
-	pair, tf := SplitSymbol(symbol)
-	return Event{Symbol: symbol, Pair: pair, Timeframe: tf}
-}
-
-// Returns true if event is of any type buy
-func (event *Event) IsBuy() bool {
-	if event.Type == MARKET_BUY || event.Type == LIMIT_BUY || event.Type == CLOSE_BUY {
-		return true
-	}
-	return false
-}
-
-// Returns true if event is of any type buy
-func (event *Event) StringType() string {
-	return EventTypes[event.Type]
+	return Event{Symbol: symbol}
 }
 
 /*
@@ -84,7 +61,7 @@ type Events []Event
 // Sort Events
 func (events Events) Sort() Events {
 	sort.SliceStable(events, func(i, j int) bool {
-		return events[i].Price > events[j].Price
+		return events[i].Time.Before(events[j].Time)
 	})
 	return events
 }
@@ -165,7 +142,7 @@ func (events *Events) Add(event Event) bool {
 }
 
 // Delete event from events list
-func (events *Events) Del(event Event) bool {
+func (events *Events) Delete(event Event) bool {
 	for i, v := range *events {
 		if v == event {
 			*events = append((*events)[:i], (*events)[i+1:]...)

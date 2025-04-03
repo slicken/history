@@ -7,23 +7,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"github.com/slicken/history"
-	"github.com/slicken/history/highcharts"
+	"github.com/slicken/history/charts"
 )
 
 var (
-	hist          = new(history.History)       // main struct to control bars data
-	eventListener = new(history.EventListener) // we add our strategy to eventlistener witch is looking at the hist
-	events        = new(history.Events)        // we store our events here, if we want to save them
-	strategy      = NewDoubleWick()            // improved power strategy with better signal generation
-	chart         = highcharts.DefaultChart()  // we use highcharts for plotting
+	hist         = new(history.History)      // main struct to control bars data
+	strategy     = NewEngulfing()            // example strategy
+	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
+	events       = new(history.Events)       // we store our events here, if we want to save them
+	chart        = charts.NewHighChart()
 
-	config = new(Config) // store argument configurations for example app
-	// other
-	symbols []string // list of symbols to handle bars
+	config  = new(Config) // store argument configurations for example app
+	symbols []string      // list of symbols to handle bars
 )
 
 // Config holds app arguments
@@ -73,6 +71,7 @@ Options:
 		flag.Usage()
 		os.Exit(0) // Exit after displaying the help message
 	}
+
 	// ----------------------------------------------------------------------------------------------
 	// create list of symbols form data grabbet from my exchanges
 	// ----------------------------------------------------------------------------------------------
@@ -107,27 +106,40 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	hist.Load(symbols...)
 	// ----------------------------------------------------------------------------------------------
-	// add strategy to event listener
+	// Setup EventHandler and subscribe to events
 	// ----------------------------------------------------------------------------------------------
-	eventListener.Add(strategy)
+	// Add strategy to event handler
+	// eventHandler.AddStrategy(strategy)
+	// Subscribe to MARKET_BUY event
+	// eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
+	// 	log.Printf("--- Bind your function to MARKET_BUY event\n")
+	// 	return nil
+	// })
+	// eventHandler.Subscribe(history.MARKET_SELL, func(event history.Event) error {
+	// 	log.Printf("--- Bind your function to MARKET_SELL event\n")
+	// 	return nil
+	// })
+	// Start event handler that will run strategies
+	// and handle events every time we got new bars
+	// if err := eventHandler.Start(hist, events); err != nil {
+	// 	log.Fatal("could not start event handler:", err)
+	// }
 	// ----------------------------------------------------------------------------------------------
-	// start event listener
+	// highchart
 	// ----------------------------------------------------------------------------------------------
-	eventListener.Start(hist, events)
-	// highchart settings (highcharts)
-	// chart.Type = highcharts.ChartType(highcharts.Spline)
+	// chart.Type = charts.ChartType(charts.Spline)
 	chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
-	http.HandleFunc("/", httpIndex)
-	http.HandleFunc("/test", httpBacktest)
-	http.HandleFunc("/top/", httpTopPreformers)
+	http.HandleFunc("/", httpPlot)
+	http.HandleFunc("/test", httpStrategyTest)
+	http.HandleFunc("/favicon.ico", http.NotFound)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// run strategy on current bar and plot event on chart
-func httpIndex(w http.ResponseWriter, r *http.Request) {
+// plot all symbol charts loaded in history
+func httpPlot(w http.ResponseWriter, r *http.Request) {
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
@@ -143,19 +155,25 @@ func httpIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(c)
 }
 
-// httpBacktest strategy and plot events
-func httpBacktest(w http.ResponseWriter, r *http.Request) {
+// httpStrategyTest runs backtest with portfolio tracking and prints performance
+func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
+	// Reset the strategy to start fresh
+	strategy = NewEngulfing()
+
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
-	// runbacktest on all history that 'hist' handles
-	ev, err := hist.Test(strategy, hist.FirstTime(), hist.LastTime())
+
+	tester := history.NewTester(hist, strategy)
+	events, err := tester.Test(hist.FirstTime(), hist.LastTime())
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	// build charts with events
-	c, err := chart.BuildCharts(hist.Map(), ev.Map())
+
+	// build charts with the events from tester
+	c, err := chart.BuildCharts(hist.Map(), events.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -163,84 +181,55 @@ func httpBacktest(w http.ResponseWriter, r *http.Request) {
 	w.Write(c)
 }
 
-// httPortfolioTest with portfolio
-// func httPortfolioTest(w http.ResponseWriter, r *http.Request) {
-// 	// limit bars
-// 	if config.limit > 0 {
-// 		hist.Limit(config.limit)
-// 	}
-// 	// run strategy backtest on all data
-// 	ev, err := hist.PortfolioTest(strategy, hist.FirstTime(), hist.LastTime())
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	// build charts
-// 	c, err := chart.BuildCharts(hist.Map(), ev.Map())
-// 	if err != nil {
-// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-// 		return
-// 	}
+// ----------------------------------------------------------------------------------------------
+// S T R A T E G I E S
+// ----------------------------------------------------------------------------------------------
 
-// 	w.Write(c)
-// }
+// Engulfing test strategy
+type Engulfing struct {
+	history.BaseStrategy
+}
 
-// TopPreformers over 'url:8080/top/x' x = number of bars
-func httpTopPreformers(w http.ResponseWriter, r *http.Request) {
-	n := config.limit
-	// http://127.0.0.1/top/N	where N is number of bars
-	if len(r.URL.Path) > 5 {
-		if v, err := strconv.Atoi(r.URL.Path[5:]); err == nil {
-			n = v
-		}
-	}
-	// new copy of history, so we dont cut any bars from 'hist' struct
-	copyHist, err := history.New()
-	if err != nil {
-		log.Printf("could not create history copy: %v\n", err)
-		return
-	}
-	copyHist.Downloader = &Binance{}
-	copyHist.Update(false)
-	copyHist.Load(symbols...)
-	// limit history if 'http://127.0.0.1/top/N' is used
-	if n > 0 && n != config.limit {
-		copyHist.Limit(n + 1)
-	}
-	// run strategy and save events to new bucket
-	var results history.Events
-	for symbol, bars := range copyHist.Map() {
-		strategy := &Preformance{n, false}
-		if event, ok := strategy.Run(symbol, bars); ok {
-			// add event, in this case its only a percentage value
-			results.Add(event)
-		}
-	}
-	// sort by price where the gains value is stored
-	results.Sort()
-	for _, event := range results {
-		fmt.Printf("%-12s %.2f %%\n", event.Symbol, event.Price)
-	}
-	fmt.Println("-----------  events", len(results))
-	/*
+func NewEngulfing() *Engulfing {
+	return &Engulfing{}
+}
 
-		build charts with custom order flow
+// Event EngulfingN..
+func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+	if len(bars) < 20 {
+		return history.Event{}, false
+	}
 
-	*/
-	buf, err := chart.MakeHeader()
-	if err != nil {
-		log.Println(err)
-		return
+	SMA := bars[0:20].SMA(history.C)
+	ATR := bars[1:4].ATR()
+
+	// MARKET_BUY
+	if bars.LastBearIdx() < 5 &&
+		bars[0].C()-SMA < 2*ATR &&
+		bars[0].C() > bars[bars.LastBearIdx()].H() &&
+		bars[0].O() < bars[bars.LastBearIdx()].H() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() > SMA {
+
+		// send helper function for BaseStrategy MarketBuy
 	}
-	for _, ev := range results {
-		bars := copyHist.GetBars(ev.Symbol)
-		title := fmt.Sprintf("%-20s  (%.2f%%)", ev.Symbol, ev.Price)
-		chart, err := chart.MakeChart(title, bars, results.Symbol(ev.Symbol))
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		// append to slice
-		buf = append(buf, chart...)
+
+	// MARKET_SELL
+	if bars.LastBullIdx() < 5 &&
+		bars[0].O() > bars[bars.LastBullIdx()].L() &&
+		bars[0].C() < bars[bars.LastBullIdx()].L() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() < SMA {
+
+		// send helper function for BaseStrategy MarketBuy
 	}
-	w.Write(buf)
+
+	return history.Event{}, false
+}
+
+// Name returns the strategy name
+func (s *Engulfing) Name() string {
+	return "Engulfing"
 }

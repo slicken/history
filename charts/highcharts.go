@@ -1,4 +1,4 @@
-package highcharts
+package charts
 
 import (
 	"encoding/json"
@@ -43,8 +43,8 @@ const (
 	Spline ChartType = "spline"
 )
 
-// DefaultChart returns default chart settings
-func DefaultChart() *HighChart {
+// NewHighChart returns default chart settings
+func NewHighChart() *HighChart {
 	return &HighChart{
 		Type:      Candlestick,
 		Volume:    true,

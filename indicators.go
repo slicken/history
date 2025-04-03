@@ -191,8 +191,8 @@ func (bars Bars) IsEngulfSell() bool {
 	return false
 }
 
-// TD Sequential 9
-func (bars Bars) TD() int {
+// TD Sequential
+func (bars Bars) TDSequential() int {
 	var uc []int = make([]int, len(bars))
 	var dc []int = make([]int, len(bars))
 	for i := len(bars) - 5; i >= 0; i-- {
@@ -250,54 +250,107 @@ func (bars Bars) TD() int {
 	return 0
 }
 
-// // FractalHighIdx
-// func (bars Bars) FractalHighIdx(per int) int {
-// 	for i, _ := range bars[:len(bars)-per] {
-// 		sh := i - per
-// 		r := (per * 2) + 1
-// 		if bars[sh:r].HighestIdx(H) == i {
-// 			return i
-// 		}
-// 	}
-// 	return -1
-// }
+// RSI calculates the Relative Strength Index for the given period
+func (bars Bars) RSI(period int) float64 {
+	if len(bars) < period+1 {
+		return 0
+	}
 
-// // FractalLowIdx
-// func (bars Bars) FractalLowIdx(per int) int {
-// 	for i, _ := range bars[:len(bars)-per] {
-// 		sh := i - per
-// 		r := (per * 2) + 1
-// 		if bars[sh:r].LowestIdx(L) == i {
-// 			return i
-// 		}
-// 	}
-// 	return -1
-// }
+	var gains, losses float64
+	for i := 1; i <= period; i++ {
+		change := bars[i-1].Close - bars[i].Close
+		if change > 0 {
+			gains += change
+		} else {
+			losses -= change
+		}
+	}
 
-// // IsPinBuy ...
-// func (bars Bars) IsPinBuy() bool {
-// 	o0 := bars[0].Open
-// 	o2 := bars[2].Open
-// 	c0 := bars[0].Close
-// 	c2 := bars[2].Close
+	if losses == 0 {
+		return 100
+	}
 
-// 	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
-// 		c2 < o2 && c0 > o0 && c0 > bars[1].BodyLow()+bars[1].Body()*0.5 {
-// 		return true
-// 	}
-// 	return false
-// }
+	rs := gains / losses
+	return 100 - (100 / (1 + rs))
+}
 
-// // IsPinSell ...
-// func (bars Bars) IsPinSell() bool {
-// 	o0 := bars[0].Open
-// 	o2 := bars[2].Open
-// 	c0 := bars[0].Close
-// 	c2 := bars[2].Close
+// Stochastic calculates the Stochastic oscillator
+// Returns %K (fast stochastic) and %D (slow stochastic)
+func (bars Bars) Stochastic(period int) (k, d float64) {
+	if len(bars) < period {
+		return 0, 0
+	}
 
-// 	if bars[2].Body() > bars[1].Body() && bars[0].Body() > bars[1].Body() &&
-// 		c2 > o2 && c0 < o0 && c0 < bars[1].BodyHigh()-bars[1].Body()*0.5 {
-// 		return true
-// 	}
-// 	return false
-// }
+	// Calculate %K
+	currentClose := bars[0].Close
+	lowestLow := bars[0].Low
+	highestHigh := bars[0].High
+
+	for i := 0; i < period; i++ {
+		if bars[i].Low < lowestLow {
+			lowestLow = bars[i].Low
+		}
+		if bars[i].High > highestHigh {
+			highestHigh = bars[i].High
+		}
+	}
+
+	if highestHigh-lowestLow == 0 {
+		k = 0
+	} else {
+		k = 100 * ((currentClose - lowestLow) / (highestHigh - lowestLow))
+	}
+
+	// Calculate %D (3-period SMA of %K)
+	if len(bars) < period+2 {
+		return k, k
+	}
+
+	k2, _ := bars[1:].Stochastic(period)
+	k3, _ := bars[2:].Stochastic(period)
+	d = (k + k2 + k3) / 3
+
+	return k, d
+}
+
+// IsPinbarBuy checks if the bar is a bullish pinbar
+func (bars Bars) IsPinbarBuy() bool {
+	if len(bars) < 1 {
+		return false
+	}
+
+	bar := bars[0]
+
+	// Check for long lower wick
+	wickRatio := bar.WickDn() / bar.Body()
+	upperWickRatio := bar.WickUp() / bar.Body()
+
+	// Conditions for bullish pinbar:
+	// 1. Lower wick should be at least 2x the body
+	// 2. Upper wick should be small (less than body)
+	// 3. Close should be in the upper third of the range
+	return wickRatio >= 2.0 &&
+		upperWickRatio < 1.0 &&
+		bar.Bullish()
+}
+
+// IsPinbarSell checks if the bar is a bearish pinbar
+func (bars Bars) IsPinbarSell() bool {
+	if len(bars) < 1 {
+		return false
+	}
+
+	bar := bars[0]
+
+	// Check for long upper wick
+	wickRatio := bar.WickUp() / bar.Body()
+	lowerWickRatio := bar.WickDn() / bar.Body()
+
+	// Conditions for bearish pinbar:
+	// 1. Upper wick should be at least 2x the body
+	// 2. Lower wick should be small (less than body)
+	// 3. Close should be in the lower third of the range
+	return wickRatio >= 2.0 &&
+		lowerWickRatio < 1.0 &&
+		bar.Bearish()
+}
