@@ -282,7 +282,7 @@ func (h *History) Add(symbol string, bars Bars) error {
 }
 
 // Update enables or disables new bars data
-// this will also remove outdated historys from struct but not from file
+// this will also unload outdated historys (inaktive symbols) from history but not from database
 func (h *History) Update(enabled bool) {
 	h.Lock()
 	h.update = enabled
@@ -310,9 +310,21 @@ func (h *History) Update(enabled bool) {
 				}
 
 				if limit > 1 {
-					wg.Add(1)
-					fmt.Println("h.download", symbol, limit)
-					go h.download(symbol, limit, &wg)
+
+					var wg sync.WaitGroup
+					for symbol := range h.bars {
+
+						wg.Add(1)
+						go func(symbol string, wg *sync.WaitGroup) {
+							defer wg.Done()
+
+							// download bars
+							err := h.download(symbol, limit)
+							if err != nil {
+								log.Printf("faled to update %s: %v\n", symbol, err)
+							}
+						}(symbol, &wg)
+					}
 				}
 			}
 			h.RUnlock()
@@ -332,13 +344,22 @@ func (h *History) Update(enabled bool) {
 
 // ReprocessHistory downloads and overwrites bars for all loaded symbols with specified limit
 func (h *History) ReprocessHistory(limit int) error {
-	log.Println("reprocessing history")
+	log.Printf("reprocessing %d bars\n", limit)
 
 	h.RLock()
 	var wg sync.WaitGroup
 	for symbol := range h.bars {
+
 		wg.Add(1)
-		go h.download(symbol, limit, &wg)
+		go func(symbol string, wg *sync.WaitGroup) {
+			defer wg.Done()
+
+			// download bars
+			err := h.download(symbol, limit)
+			if err != nil {
+				log.Printf("failed to reprocess bars for %s: %v\n", symbol, err)
+			}
+		}(symbol, &wg)
 	}
 	h.RUnlock()
 
@@ -347,8 +368,7 @@ func (h *History) ReprocessHistory(limit int) error {
 }
 
 // download and check validity before adding to history
-func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
-	defer wg.Done()
+func (h *History) download(symbol string, limit int) error {
 
 	pair, tf := SplitSymbol(symbol)
 
@@ -357,7 +377,6 @@ func (h *History) download(symbol string, limit int, wg *sync.WaitGroup) error {
 	bars, err = h.GetKlines(pair, tf, limit)
 	if err != nil {
 		log.Printf("failed to download %d bars for %s: %v\n", limit, symbol, err)
-		time.Sleep(2 * time.Minute)
 		return err
 	}
 	// since we always get the current bar witch is not finish, we dont want to save that

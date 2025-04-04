@@ -98,19 +98,21 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	hist.Downloader = &Binance{}
 	// ----------------------------------------------------------------------------------------------
-	// limit bars
+	// update bars when there is new bars avaliable
 	// ----------------------------------------------------------------------------------------------
-	hist.Limit(config.limit)
+	hist.Update(true)
 	// ----------------------------------------------------------------------------------------------
 	// load symbols. use a list to load multiple.
 	// ----------------------------------------------------------------------------------------------
 	hist.Load(symbols...)
 	// ----------------------------------------------------------------------------------------------
+	// limit bars
+	// ----------------------------------------------------------------------------------------------
+	hist.Limit(config.limit)
+	// ----------------------------------------------------------------------------------------------
 	// Setup EventHandler and subscribe to events
 	// ----------------------------------------------------------------------------------------------
-	// Add strategy to event handler
 	// eventHandler.AddStrategy(strategy)
-	// Subscribe to MARKET_BUY event
 	// eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
 	// 	log.Printf("--- Bind your function to MARKET_BUY event\n")
 	// 	return nil
@@ -119,8 +121,7 @@ Options:
 	// 	log.Printf("--- Bind your function to MARKET_SELL event\n")
 	// 	return nil
 	// })
-	// Start event handler that will run strategies
-	// and handle events every time we got new bars
+	// Start EventHadler - runs strategies on new bars
 	// if err := eventHandler.Start(hist, events); err != nil {
 	// 	log.Fatal("could not start event handler:", err)
 	// }
@@ -132,6 +133,7 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
+
 	http.HandleFunc("/", httpPlot)
 	http.HandleFunc("/test", httpStrategyTest)
 	http.HandleFunc("/favicon.ico", http.NotFound)

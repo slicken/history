@@ -114,7 +114,7 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 			strings.ToUpper(pair), strings.ToLower(timeframe), batchSize, oldestTimestamp-1)
 
 		// Respect rate limits
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 	}
 
 	// Ensure we don't return more bars than requested
