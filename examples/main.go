@@ -15,9 +15,9 @@ import (
 
 var (
 	hist         = new(history.History)      // main struct to control bars data
-	strategy     = NewEngulfing()            // example strategy
-	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
 	events       = new(history.Events)       // we store our events here, if we want to save them
+	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
+	strategy     = NewPredictor()            // lstn predicto strategy
 	chart        = charts.NewHighChart()
 
 	config  = new(Config) // store argument configurations for example app
@@ -26,14 +26,15 @@ var (
 
 // Config holds app arguments
 type Config struct {
-	// symbols
-	tf    string
-	quote string
+	// symbol settingss
+	tf     string
+	quote  string
+	symbol string
+	// history settings
+	update bool
+	limit  int
 	// chart settings
-	limit int
 	ctype string
-	// force is for loading one symbol only
-	force string
 }
 
 func main() {
@@ -48,9 +49,10 @@ func main() {
 	// ----------------------------------------------------------------------------------------------
 	flag.StringVar(&config.tf, "tf", "1d", "timeframe")
 	flag.StringVar(&config.quote, "quote", "USDT", "build pairs from quote")
+	flag.BoolVar(&config.update, "update", false, "update bars")
 	flag.IntVar(&config.limit, "limit", 300, "limit bars (0=off)")
 	flag.StringVar(&config.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
-	flag.StringVar(&config.force, "force", "", "force one symbol")
+	flag.StringVar(&config.symbol, "symbol", "", "singlle symboltf")
 	// Customize flag.Usage
 	flag.Usage = func() {
 		fmt.Printf(`Usage: %s [options]
@@ -58,9 +60,10 @@ func main() {
 Options:
   -tf string                  Specify the timeframe for the operation (default '1d')
   -quote string               Build pairs from quote (default 'USDT')
+  -update bool                Update bars (default false)
   -limit int                  Limit bars (0=off) (default 300)
   -ctype string               Chart type: candlestick|ohlc|line|spline (default 'candlestick')
-  -force string               Force one symbol, e.g., 'BTC/USDT'
+  -symbol string              Single symboltf. e.g., 'BTCUSDT1d'
 
   `, os.Args[0])
 	}
@@ -75,9 +78,9 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// create list of symbols form data grabbet from my exchanges
 	// ----------------------------------------------------------------------------------------------
-	symbols = []string{config.force}
-	if config.force == "" {
-		var err error
+	var err error
+	symbols = []string{config.symbol}
+	if config.symbol == "" {
 		symbols, err = MakeSymbolMultiTimeframe(config.quote, config.tf)
 		if err != nil {
 			log.Fatal("could not make symbols:", err)
@@ -88,7 +91,6 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// Initialize history with database
 	// ----------------------------------------------------------------------------------------------
-	var err error
 	hist, err = history.New()
 	if err != nil {
 		log.Fatal("could not create history:", err)
@@ -100,7 +102,7 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// update bars when there is new bars avaliable
 	// ----------------------------------------------------------------------------------------------
-	hist.Update(true)
+	hist.Update(config.update)
 	// ----------------------------------------------------------------------------------------------
 	// load symbols. use a list to load multiple.
 	// ----------------------------------------------------------------------------------------------
@@ -112,7 +114,7 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// Setup EventHandler and subscribe to events
 	// ----------------------------------------------------------------------------------------------
-	// eventHandler.AddStrategy(strategy)
+	eventHandler.AddStrategy(strategy)
 	// eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
 	// 	log.Printf("--- Bind your function to MARKET_BUY event\n")
 	// 	return nil
@@ -121,21 +123,21 @@ Options:
 	// 	log.Printf("--- Bind your function to MARKET_SELL event\n")
 	// 	return nil
 	// })
-	// Start EventHadler - runs strategies on new bars
-	// if err := eventHandler.Start(hist, events); err != nil {
-	// 	log.Fatal("could not start event handler:", err)
-	// }
+	if err := eventHandler.Start(hist, events); err != nil {
+		log.Fatal("could not start event handler:", err)
+	}
 	// ----------------------------------------------------------------------------------------------
 	// highchart
 	// ----------------------------------------------------------------------------------------------
 	// chart.Type = charts.ChartType(charts.Spline)
-	chart.SMA = []int{20, 200}
+	// chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
-
+	log.Println("starting web server...")
 	http.HandleFunc("/", httpPlot)
 	http.HandleFunc("/test", httpStrategyTest)
+	http.HandleFunc("/predictor", httpPredictor)
 	http.HandleFunc("/favicon.ico", http.NotFound)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -160,7 +162,7 @@ func httpPlot(w http.ResponseWriter, r *http.Request) {
 // httpStrategyTest runs backtest with portfolio tracking and prints performance
 func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
-	strategy = NewEngulfing()
+	strategy := NewEngulfing()
 
 	// limit bars
 	if config.limit > 0 {
@@ -180,6 +182,41 @@ func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Write(c)
+}
+
+// httpPredictor plots predicted price on chart
+func httpPredictor(w http.ResponseWriter, r *http.Request) {
+	// Reset the strategy to start fresh
+	strategy := NewPredictor()
+
+	// limit bars
+	if config.limit > 0 {
+		hist.Limit(config.limit)
+	}
+
+	tester := history.NewTester(hist, strategy)
+	events, err := tester.Test(hist.FirstTime(), hist.LastTime())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// print results
+	fmt.Println("Predicted events:", strategy.num)
+	fmt.Printf("Wins: %d\n", strategy.win)
+	fmt.Printf("Loss: %d\n", strategy.loss)
+	winRatio := float64(strategy.win) / float64(strategy.num) * 100
+	lossRatio := float64(strategy.loss) / float64(strategy.num) * 100
+	fmt.Printf("Win ratio: %.2f%%\nLoss ratio: %.2f%%\n", winRatio, lossRatio)
+
+	// build charts with the events from tester
+	c, err := chart.BuildCharts(hist.Map(), events.Map())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Write(c)
 }
 

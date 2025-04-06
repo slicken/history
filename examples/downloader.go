@@ -17,6 +17,12 @@ import (
 // Binance data loaders
 type Binance struct{}
 
+// BinanceError represents the error response from Binance API
+type BinanceError struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
 // GetKlines new data from Binance exchange
 func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error) {
 	var allBars history.Bars
@@ -39,12 +45,34 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 			return nil, fmt.Errorf("failed to get klines: %w", err)
 		}
 
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
 		var data [][]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			resp.Body.Close()
+		if err := json.Unmarshal(body, &data); err != nil {
+			// Try to parse as error response
+			var errResp BinanceError
+			if err := json.Unmarshal(body, &errResp); err == nil && errResp.Code == -1003 {
+				// Extract ban timestamp from message
+				msg := errResp.Msg
+				if idx := strings.Index(msg, "until "); idx != -1 {
+					timestampStr := strings.Split(msg[idx+6:], ".")[0]
+					if banUntil, err := strconv.ParseInt(timestampStr, 10, 64); err == nil {
+						now := time.Now().UnixMilli()
+						sleepDuration := time.Duration(banUntil-now) * time.Millisecond
+						if sleepDuration > 0 {
+							log.Printf("IP banned for %s, sleeping until ban is lifted...", sleepDuration)
+							time.Sleep(sleepDuration)
+							continue
+						}
+					}
+				}
+			}
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
-		resp.Body.Close()
 
 		if len(data) == 0 {
 			break // No more data available

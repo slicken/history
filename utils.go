@@ -1,11 +1,20 @@
 package history
 
 import (
+	"bytes"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 var (
 	maxlimit = 1000
+	fileDir  = "data"
 )
 
 // Setmaxlimit limits new data request
@@ -165,4 +174,118 @@ func SplitSymbol(s string) (pair string, tf string) {
 // ToUnixTime converts time to Unix time
 func ToUnixTime(t time.Time) int64 {
 	return t.Unix() / 1e6
+}
+
+// WriteJSON writes bars to a JSON file
+func (bars Bars) WriteJSON(filename string) error {
+	if len(bars) == 0 {
+		return fmt.Errorf("no bars data to write")
+	}
+
+	if err := os.MkdirAll(fileDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	if !strings.HasSuffix(filename, ".json") {
+		filename += ".json"
+	}
+
+	filepath := filepath.Join(fileDir, filename)
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	log.Println("Wrote to JSON file:", filepath)
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(bars)
+}
+
+// WriteCSV writes bars to a CSV file
+func (bars Bars) WriteCSV(filename string) error {
+	if len(bars) == 0 {
+		return fmt.Errorf("no bars data to write")
+	}
+
+	if err := os.MkdirAll(fileDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	if !strings.HasSuffix(filename, ".csv") {
+		filename += ".csv"
+	}
+
+	filepath := filepath.Join(fileDir, filename)
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write header
+	header := []string{"Time", "Open", "High", "Low", "Close", "Volume"}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header: %v", err)
+	}
+
+	// Write data rows
+	for _, bar := range bars {
+		row := []string{
+			bar.Time.Format(time.RFC3339),
+			fmt.Sprintf("%f", bar.Open),
+			fmt.Sprintf("%f", bar.High),
+			fmt.Sprintf("%f", bar.Low),
+			fmt.Sprintf("%f", bar.Close),
+			fmt.Sprintf("%f", bar.Volume),
+		}
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row: %v", err)
+		}
+	}
+
+	log.Println("Wrote to CSV file:", filepath)
+	return nil
+}
+
+// ByteData holds byte data and error
+type ByteData struct {
+	data []byte
+	err  error
+}
+
+// ToFile writes ByteData to a file
+func (b ByteData) ToFile(filename string) error {
+	if b.err != nil {
+		return b.err
+	}
+
+	if err := os.MkdirAll(fileDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	filepath := filepath.Join(fileDir, filename)
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	// Pretty print the JSON with indentation
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, b.data, "", "  "); err != nil {
+		return fmt.Errorf("failed to indent JSON: %v", err)
+	}
+
+	_, err = prettyJSON.WriteTo(file)
+	if err != nil {
+		return fmt.Errorf("failed to write data: %v", err)
+	}
+
+	log.Println("Wrote to file:", filepath)
+	return nil
 }

@@ -126,28 +126,24 @@ func (bars Bars) JSON() []byte {
 	return json
 }
 
-// EXPORT_QUERY defines how bars should be exported using SQL-like syntax
+// FormatBytes returns bars as JSON based on the input query
 // Example queries:
-// TradingView compatible format (default):
+// TradingView compatible format:
 // "SELECT UNIX_TIMESTAMP(time)*1000 as time, open, high, low, close"
-//
 // Custom formats:
 // "SELECT DATE_FORMAT(time, '%Y-%m-%d %H:%M:%S') as date, CAST(open as CHAR) as opening_price, high, low, ROUND(close,4) as closing_price"
 // "SELECT UNIX_TIMESTAMP(time) as timestamp, ROUND(open,4) as open_price, ROUND(close,2) as close_price"
 // "SELECT time, open, high, low, close" -- standard fields
 // "SELECT DATE_FORMAT(time, '%Y-%m-%dT%H:%i:%sZ') as timestamp, *" -- ISO8601 time with all fields
-var EXPORT_QUERY string = "SELECT UNIX_TIMESTAMP(time)*1000 as time, open, high, low, close"
-
-// Export returns bars as JSON based on EXPORT_QUERY
-func (bars Bars) Export() ([]byte, error) {
+func (bars Bars) FormatBytes(inputQuery string) ByteData {
 	if len(bars) == 0 {
-		return []byte("[]"), nil
+		return ByteData{data: []byte("[]"), err: nil}
 	}
 
 	// Parse the query to determine field selection and transformations
-	fields, err := parseExportQuery(EXPORT_QUERY)
+	fields, err := parseExportQuery(inputQuery)
 	if err != nil {
-		return nil, fmt.Errorf("invalid export query: %v", err)
+		return ByteData{err: fmt.Errorf("invalid query: %v", err)}
 	}
 
 	// Build the result array
@@ -175,7 +171,8 @@ func (bars Bars) Export() ([]byte, error) {
 		result = append(result, item)
 	}
 
-	return json.Marshal(result)
+	data, err := json.Marshal(result)
+	return ByteData{data: data, err: err}
 }
 
 type exportField struct {

@@ -322,6 +322,7 @@ func (h *History) Update(enabled bool) {
 							err := h.download(symbol, limit)
 							if err != nil {
 								log.Printf("faled to update %s: %v\n", symbol, err)
+								time.Sleep(10 * time.Second)
 							}
 						}(symbol, &wg)
 					}
@@ -376,7 +377,6 @@ func (h *History) download(symbol string, limit int) error {
 	var bars Bars
 	bars, err = h.GetKlines(pair, tf, limit)
 	if err != nil {
-		log.Printf("failed to download %d bars for %s: %v\n", limit, symbol, err)
 		return err
 	}
 	// since we always get the current bar witch is not finish, we dont want to save that

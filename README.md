@@ -157,25 +157,43 @@ func (h *History) WriteBars(symbol string, bars Bars) error    // Save bars to d
 
 ```go
 type Bar struct {
-    Time   time.Time
-    Open   float64
-    High   float64
-    Low    float64
-    Close  float64
-    Volume float64
+    Time   time.Time `json:"time"`
+    Open   float64   `json:"open"`
+    High   float64   `json:"high"`
+    Low    float64   `json:"low"`
+    Close  float64   `json:"close"`
+    Volume float64   `json:"volume,omitempty"`
 }
 
 // Methods
-func (b Bar) Mode(mode Price) float64   // Get price based on mode
-func (b Bar) T() time.Time              // Get bar time
-func (b Bar) O() float64                // Get open price
-func (b Bar) H() float64                // Get high price
-func (b Bar) L() float64                // Get low price
-func (b Bar) C() float64                // Get close price
-func (b Bar) V() float64                // Get volume
-func (b Bar) Range() float64            // Get price range (high - low)
-func (b Bar) MarshalJSON() ([]byte, error)    // JSON marshaling
-func (b *Bar) UnmarshalJSON(data []byte) error // JSON unmarshaling
+func (b Bar) MarshalJSON() ([]byte, error)
+func (b *Bar) UnmarshalJSON(data []byte) error
+func (b Bar) Mode(mode Price) float64
+func (b Bar) T() time.Time
+func (b Bar) O() float64
+func (b Bar) H() float64
+func (b Bar) L() float64
+func (b Bar) C() float64
+func (b Bar) HL2() float64
+func (b Bar) HLC3() float64
+func (b Bar) OHLC4() float64
+func (b Bar) V() float64
+func (b Bar) Range() float64
+func (b Bar) Body() float64
+func (b Bar) BodyHigh() float64
+func (b Bar) BodyLow() float64
+func (b Bar) Bull() bool
+func (b Bar) Bear() bool
+func (b Bar) Bullish() bool
+func (b Bar) Bearish() bool
+func (b Bar) WickUp() float64
+func (b Bar) WickDn() float64
+func (b Bar) PercMove() float64
+
+// Timeframe Functions
+func TFInterval(tf string) Timeframe
+func TFString(tf Timeframe) string
+func TFIsValid(tf string) bool
 ```
 
 ### Bars (bars.go)
@@ -184,27 +202,20 @@ func (b *Bar) UnmarshalJSON(data []byte) error // JSON unmarshaling
 type Bars []Bar
 
 // Core Methods
-func (bars Bars) Sort() Bars                                  // Sort bars by time
-func (bars Bars) Reverse() Bars                              // Reverse bar order
-func (bars Bars) Period() time.Duration                      // Get timeframe interval
-func (bars Bars) FirstBar() Bar                              // Get first bar
-func (bars Bars) LastBar() Bar                               // Get last bar
-func (bars Bars) Find(dt time.Time) (int, Bar)              // Find bar at specific time
-func (bars Bars) TimeSpan(start, end time.Time) Bars        // Get bars within time range
-func (bars Bars) MarshalJSON() ([]byte, error)              // JSON marshaling
-func (bars *Bars) UnmarshalJSON(data []byte) error          // JSON unmarshaling
+func (bars Bars) Sort() Bars
+func (bars Bars) Reverse() Bars
+func (bars Bars) Period() time.Duration
+func (bars Bars) FirstBar() Bar
+func (bars Bars) LastBar() Bar
+func (bars Bars) Find(dt time.Time) (int, Bar)
+func (bars Bars) TimeSpan(start, end time.Time) Bars
+func (bars Bars) JSON() []byte
 
-// Time Functions
-func (bars Bars) T() []time.Time                            // Get all bar times
-func (bars Bars) FirstTime() time.Time                      // Get first bar time
-func (bars Bars) LastTime() time.Time                       // Get last bar time
-
-// Price Functions
-func (bars Bars) O() []float64                             // Get all open prices
-func (bars Bars) H() []float64                             // Get all high prices
-func (bars Bars) L() []float64                             // Get all low prices
-func (bars Bars) C() []float64                             // Get all close prices
-func (bars Bars) V() []float64                             // Get all volumes
+// Data Export Methods
+func (bars Bars) FormatBytes(inputQuery string) ByteData
+func (bars Bars) WriteJSON(filename string) error
+func (bars Bars) WriteCSV(filename string) error
+func (bars Bars) WriteToFile(filename string) error
 ```
 
 ### Events (events.go)
@@ -223,16 +234,21 @@ type Event struct {
 type Events []Event
 
 // Methods
-func NewEvent(symbol string) Event                          // Create new event
-func (events Events) Sort() Events                         // Sort events by time
-func (events Events) Symbol(symbol string) Events          // Filter events by symbol
-func (events Events) Exists(event Event) bool              // Check if event exists
-func (events Events) FirstEvent() Event                    // Get first event
-func (events Events) LastEvent() Event                     // Get last event
-func (events Events) Find(dt time.Time) (int, Event)      // Find event at time
-func (events *Events) Add(event Event) bool               // Add new event
-func (events *Events) Delete(event Event) bool            // Delete event
-func (events Events) Map() map[string]Events              // Map events by symbol
+func NewEvent(symbol string) Event
+func (events Events) Sort() Events
+func (events Events) Symbol(symbol string) Events
+func (events Events) Exists(event Event) bool
+func (events Events) FirstEvent() Event
+func (events Events) LastEvent() Event
+func (events Events) Find(dt time.Time) (int, Event)
+
+// Event Management
+func (events *Events) Add(event Event) bool
+func (events *Events) Delete(event Event) bool
+func (events Events) Map() map[string]Events
+func MapEvents(events ...Event) map[string]Events
+func ListEvents(ev ...Event) Events
+func (ev Events) RemoveIndex(index int) Events
 ```
 
 ### EventHandler (eventhandler.go)
@@ -246,61 +262,12 @@ type EventHandler struct {
 
 type EventCallback func(Event) error
 
-// Core Functions
-func NewEventHandler() *EventHandler                       // Create new event handler
-func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback)   // Subscribe to event type
-func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback) // Unsubscribe from event type
-func (eh *EventHandler) Handle(event Event) error         // Handle single event
-func (eh *EventHandler) HandleEvents(events Events) error // Handle multiple events
-func (eh *EventHandler) Clear()                          // Clear all handlers
-func (eh *EventHandler) Start(hist *History, events *Events) error  // Start event processing
-func (eh *EventHandler) Stop() error                     // Stop event processing
-func (eh *EventHandler) AddStrategy(strategy Strategy) error        // Add strategy
-func (eh *EventHandler) RemoveStrategy(strategy Strategy) error     // Remove strategy
-```
-
-### Indicators (indicators.go)
-
-```go
-// Moving Averages
-func (bars Bars) SMA(mode Price) float64    // Simple Moving Average
-func (bars Bars) LWMA(mode Price) float64   // Linear Weighted Moving Average
-func (bars Bars) EMA(mode Price) float64    // Exponential Moving Average
-
-// Volatility
-func (bars Bars) ATR() float64              // Average True Range
-func (bars Bars) StDev(mode Price) float64  // Standard Deviation
-func (bars Bars) Range() float64            // Price Range
-
-// Price Analysis
-func (bars Bars) Highest(mode Price) float64    // Highest price in period
-func (bars Bars) HighestIdx(mode Price) int     // Index of highest price
-func (bars Bars) Lowest(mode Price) float64     // Lowest price in period
-func (bars Bars) LowestIdx(mode Price) int      // Index of lowest price
-
-// Price Mode Constants
-const (
-    O     Price = iota  // Open
-    H                   // High
-    L                   // Low
-    C                   // Close
-    HL2                 // (High + Low) / 2
-    HLC3                // (High + Low + Close) / 3
-    OHLC4               // (Open + High + Low + Close) / 4
-    V                   // Volume
-)
-```
-
-### Utils (utils.go)
-
-```go
-// History Utils
-func (h *History) SetMaxLimit(v int)                         // Set maximum limit for data requests
-
-// Symbol Utils
-func SplitSymbol(s string) (pair string, tf string)         // Split symbol into pair and timeframe
-func ToUnixTime(t time.Time) int64                          // Convert time to Unix timestamp
-func TFInterval(tf string) time.Duration                    // Convert timeframe string to duration
+// Methods
+func NewEventHandler() *EventHandler
+func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback)
+func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback)
+func (eh *EventHandler) Handle(event Event) error
+func (eh *EventHandler) HandleEvents(events Events) error
 ```
 
 ### Streamer (streamer.go)
@@ -311,101 +278,97 @@ type Streamer interface {
 }
 
 // Streaming Methods
-func (bars Bars) Stream() <-chan Bar                                           // Stream bars sequentially
-func (bars Bars) StreamDuration(duration time.Duration) <-chan Bar            // Stream bars with delay
-func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bar  // Stream bars at intervals
+func (bars Bars) Stream() <-chan Bar
+func (bars Bars) StreamDuration(duration time.Duration) <-chan Bar
+func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bar
 ```
 
-### Tester (tester.go)
+### Indicators (indicators.go)
 
 ```go
-type Tester struct {
-    hist     *History
-    strategy Strategy
-    events   *Events
-}
+// Moving Averages
+func (bars Bars) SMA(mode Price) float64
+func (bars Bars) LWMA(mode Price) float64
+func (bars Bars) EMA(mode Price) float64
 
-// Core Functions
-func NewTester(hist *History, strategy Strategy) *Tester    // Create new tester
-func (t *Tester) Test(start, end time.Time) (*Events, error) // Run backtest
-func (t *Tester) ClearEvents()                             // Clear test events
+// Volatility Indicators
+func (bars Bars) ATR() float64
+func (bars Bars) StDev(mode Price) float64
+func (bars Bars) Range() float64
+
+// Price Analysis
+func (bars Bars) Highest(mode Price) float64
+func (bars Bars) HighestIdx(mode Price) int
+func (bars Bars) Lowest(mode Price) float64
+func (bars Bars) LowestIdx(mode Price) int
+func (bars Bars) LastBullIdx() int
+func (bars Bars) LastBearIdx() int
+
+// Pattern Recognition
+func (bars Bars) IsEngulfBuy() bool
+func (bars Bars) IsEngulfSell() bool
+
+// Helper Functions
+func WithinRange(src, dest, r float64) bool
+func CalcPercentage(n, total float64) float64
 ```
 
 ### Strategy (strategy.go)
 
 ```go
 type Strategy interface {
-    OnBar(symbol string, bars Bars) (Event, bool)  // Called for each new bar
-    Name() string                                  // Strategy identifier
+    OnBar(symbol string, bars Bars) (Event, bool)
+    Name() string
 }
 
 type BaseStrategy struct {
     portfolio *PortfolioManager
 }
-
-type PortfolioStrategy interface {
-    Strategy
-    GetPortfolioManager() *PortfolioManager
-}
 ```
 
-### Portfolio (portfolio.go) - 🚧 In Development
+### Portfolio (portfolio.go)
 
 ```go
 type Position struct {
-    Symbol     string    // Trading pair
-    Side       bool      // true for long, false for short
-    EntryTime  time.Time // When position was opened
-    EntryPrice float64   // Entry price
-    Size       float64   // Position size
-    Current    float64   // Current price
+    Symbol     string
+    Side       bool
+    EntryTime  time.Time
+    EntryPrice float64
+    Size       float64
+    Current    float64
 }
 
 type PortfolioManager struct {
-    Balance   float64             // Available balance
-    Positions map[string]Position // Open positions by symbol
+    Balance   float64
+    Positions map[string]Position
 }
 
-// Core Functions
+// Methods
 func NewPortfolioManager(initialBalance float64) *PortfolioManager
 ```
 
-### Charts
-
-#### Highcharts (charts/highcharts.go)
+### Utility Functions (utils.go)
 
 ```go
-type HighChart struct {
-    Type      ChartType
-    SMA       []int
-    EMA       []int
-    Volume    bool
-    VolumeSMA int
-    Shadow    bool
-    SetWidth  string
-    SetHeight string
-    SetMargin string
-}
+// Symbol Management
+func SplitSymbol(s string) (pair string, tf string)
+func ToUnixTime(t time.Time) int64
+func calcLimit(last time.Time, period time.Duration) int
 
-// Chart Types
-type ChartType string
-const (
-    Candlestick ChartType = "candlestick"
-    Ohlc        ChartType = "ohlc"
-    Line        ChartType = "line"
-    Spline      ChartType = "spline"
-)
-
-// Core Functions
-func NewHighChart() *HighChart
-func (c *HighChart) BuildCharts(bars map[string]Bars, events map[string]Events) ([]byte, error)
-func MakeOHLC(bars Bars) ([]byte, error)
-func MakeVolume(bars Bars) ([]byte, error)
+// File Operations
+func (b ByteData) ToFile(filename string) error
 ```
 
-#### TradingView (charts/tradingview.go)
+### Binance Integration (examples/downloader.go)
 
-TradingView chart integration (documentation coming soon).
+```go
+type Binance struct{}
+
+// Core Methods
+func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error)
+func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string, error)
+func GetExchangeInfo() (ExchangeInfo, error)
+```
 
 ## Contributing
 
