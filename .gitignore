@@ -2,3 +2,4 @@
 .cursor/
 examples/examples
 examples/history.db
+examples/ai_dataset/
