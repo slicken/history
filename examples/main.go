@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/slicken/history"
 	"github.com/slicken/history/charts"
@@ -35,6 +36,8 @@ type Config struct {
 	limit  int
 	// chart settings
 	ctype string
+	// temp
+	saveAI_data bool
 }
 
 func main() {
@@ -53,6 +56,7 @@ func main() {
 	flag.IntVar(&config.limit, "limit", 300, "limit bars (0=off)")
 	flag.StringVar(&config.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
 	flag.StringVar(&config.symbol, "symbol", "", "singlle symboltf")
+	flag.BoolVar(&config.saveAI_data, "saveAI_data", false, "save dataset for predictor")
 	// Customize flag.Usage
 	flag.Usage = func() {
 		fmt.Printf(`Usage: %s [options]
@@ -64,6 +68,7 @@ Options:
   -limit int                  Limit bars (0=off) (default 300)
   -ctype string               Chart type: candlestick|ohlc|line|spline (default 'candlestick')
   -symbol string              Single symboltf. e.g., 'BTCUSDT1d'
+  -saveAI_data bool           Save dataset fir LSTM predictor strategy (default false)
 
   `, os.Args[0])
 	}
@@ -86,8 +91,7 @@ Options:
 			log.Fatal("could not make symbols:", err)
 		}
 	}
-
-	log.Println("initalizing...")
+	log.Printf("initalizing %d symbols...\n", len(symbols))
 	// ----------------------------------------------------------------------------------------------
 	// Initialize history with database
 	// ----------------------------------------------------------------------------------------------
@@ -134,6 +138,15 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
+	if config.saveAI_data {
+		time.Sleep(10 * time.Second)
+
+		log.Println("saving AI data...")
+		for _, symbol := range symbols {
+			saveAI_Data(hist, symbol)
+		}
+	}
+
 	log.Println("starting web server...")
 	http.HandleFunc("/", httpPlot)
 	http.HandleFunc("/test", httpStrategyTest)

@@ -87,7 +87,7 @@ func saveAI_Data(hist *history.History, symbol string) error {
 		return fmt.Errorf("error writing file: %v", err)
 	}
 
-	log.Println("Dataset saved to", filename)
+	log.Println("saved data for", filename)
 	return nil
 }
 
