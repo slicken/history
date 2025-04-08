@@ -9,18 +9,20 @@ from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 import joblib  # For saving/loading the scaler
 import re  # For cleaning symbol names
+import argparse  # For command-line argument parsing
+from tensorflow.keras.callbacks import EarlyStopping #Import EarlyStopping
 
 # --- Configuration ---
 DATA_DIRECTORY = 'data'
 MODEL_SAVE_DIR = 'models'  # Directory to save models and scalers
-WINDOW_SIZE = 60  # Number of past bars to use for prediction. Adjusted from 20 to 60.
-FORECAST_SIZE = 5  # Number of steps ahead to predict (5 bars ahead)
+#WINDOW_SIZE = 60  # Tune this!  Now passed as argument
+#FORECAST_SIZE = 5  # Tune this!  Now passed as argument
 FEATURES = ['open', 'close', 'high', 'low', 'volume']  # Only use OHLCV
 TARGET_COLUMN = 'close'  # The column we want to predict
-EPOCHS = 30  # Reduced epochs as we're training for shorter-term prediction
-BATCH_SIZE = 64  # Increased batch size for potentially faster training
-VALIDATION_SPLIT = 0.1  # Use less for validation if data per symbol is limited
-MIN_DATA_POINTS = WINDOW_SIZE + FORECAST_SIZE + 10 # Reduced min data points needed
+EPOCHS = 75  # Tune this! Increased to 75
+BATCH_SIZE = 32  # Tune this! Decreased to 32
+VALIDATION_SPLIT = 0.2  # Tune this! Increased to 0.2
+#MIN_DATA_POINTS = WINDOW_SIZE + FORECAST_SIZE + 10 # Reduced min data points needed. Depends on arguments.
 TEST_SIZE = 0.1  # Percentage of the data to use for testing
 
 # Create save directory if it doesn't exist
@@ -65,6 +67,7 @@ def preprocess_data(df, feature_columns, target_column, window_size, forecast_si
     if df is None or df.empty:
         return None, None, None, None, None, None
 
+    MIN_DATA_POINTS = window_size + forecast_size + 10
     if len(df) < MIN_DATA_POINTS:
         print(f"Warning: Insufficient data points ({len(df)} < {MIN_DATA_POINTS}). Skipping preprocessing.")
         return None, None, None, None, None, None
@@ -118,29 +121,29 @@ def preprocess_data(df, feature_columns, target_column, window_size, forecast_si
 def build_model(input_shape):
     """Builds and compiles the LSTM model."""
     model = Sequential()
-    model.add(LSTM(64, return_sequences=True, input_shape=input_shape))  # Reduced LSTM units
-    model.add(Dropout(0.3))  # Increased dropout slightly
+    model.add(LSTM(64, return_sequences=True, input_shape=input_shape))  #  Units
+    model.add(Dropout(0.3))  # Increased dropout
     model.add(LSTM(32, return_sequences=False))  # Second LSTM layer
-    model.add(Dropout(0.3))  # Increased dropout slightly
-    model.add(Dense(16, activation='relu'))  # Reduced units in dense layer
+    model.add(Dropout(0.3))  # Increased dropout
+    model.add(Dense(16, activation='relu'))  #  Units
     model.add(Dense(1))  # Output layer for predicting one value
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
+    model.compile(optimizer=Adam(learning_rate=0.0005), loss='mean_squared_error') #Reduced rate
     return model
 
 # --- Main Training Loop ---
-def train():
+def train(window_size, forecast_size):  # Take window_size and forecast_size as arguments
     print("Starting training process...")
     processed_files = 0
     for filename in os.listdir(DATA_DIRECTORY):
         if filename.endswith('.json'):
             filepath = os.path.join(DATA_DIRECTORY, filename)
             symbol = clean_symbol_name(filename)
-            print(f"\n--- Processing Symbol: {symbol} ---")
+            print(f"\n--- Processing Symbol: {symbol} with WINDOW_SIZE = {window_size}, FORECAST_SIZE = {forecast_size} ---")
 
             # Define model and scaler paths for this symbol
-            model_file = os.path.join(MODEL_SAVE_DIR, f'model_{symbol}.h5')
-            scaler_file = os.path.join(MODEL_SAVE_DIR, f'scaler_{symbol}.pkl')
-            target_index_file = os.path.join(MODEL_SAVE_DIR, f'target_index_{symbol}.json')
+            model_file = os.path.join(MODEL_SAVE_DIR, f'model_{symbol}_w{window_size}_f{forecast_size}.h5')
+            scaler_file = os.path.join(MODEL_SAVE_DIR, f'scaler_{symbol}_w{window_size}_f{forecast_size}.pkl')
+            target_index_file = os.path.join(MODEL_SAVE_DIR, f'target_index_{symbol}_w{window_size}_f{forecast_size}.json')
 
             # Load data for the current symbol
             df = load_data_for_symbol(filepath)
@@ -150,7 +153,7 @@ def train():
             # Preprocess data
             print(f"Preprocessing data for {symbol}...")
             X_train, y_train, X_test, y_test, scaler, target_col_index = preprocess_data(
-                df, FEATURES, TARGET_COLUMN, WINDOW_SIZE, FORECAST_SIZE, TEST_SIZE
+                df, FEATURES, TARGET_COLUMN, window_size, forecast_size, TEST_SIZE
             )
 
             if X_train is None or y_train is None or scaler is None:
@@ -175,6 +178,14 @@ def train():
 
             model.summary()  # Print model summary
 
+                        # Define EarlyStopping callback
+            early_stopping = EarlyStopping(
+                monitor='val_loss',  # Monitor validation loss
+                patience=10,          # Number of epochs to wait before stopping
+                restore_best_weights=True # Restore model weights from the epoch with the lowest validation loss
+            )
+
+
             # Train the model
             print(f"Training model for {symbol}...")
             history = model.fit(
@@ -183,7 +194,8 @@ def train():
                 batch_size=BATCH_SIZE,
                 validation_split=VALIDATION_SPLIT,
                 verbose=1,
-                shuffle=True  # Shuffle data for better training
+                shuffle=True,  # Shuffle data for better training
+                 callbacks=[early_stopping]  # Add EarlyStopping callback
             )
 
             # Evaluate the model if test data is available
@@ -207,4 +219,12 @@ def train():
         print("Warning: No files were successfully processed. Check data and configuration.")
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser(description='Train LSTM model on financial data for all symbols in a directory.')
+    parser.add_argument('--window_size', type=int, default=30, help='Window size for LSTM (default: 30)')  # Reduced default
+    parser.add_argument('--forecast_size', type=int, default=1, help='Forecast size for LSTM (default: 1)')   # Reduced default
+    args = parser.parse_args()
+
+    train(args.window_size, args.forecast_size)  # Pass window_size and forecast_size to train()
+
+# Example:
+# python training.py --window_size 10 --forecast_size 1

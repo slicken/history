@@ -13,31 +13,31 @@ app = Flask(__name__)
 
 # --- Configuration (These should match your training script) ---
 MODEL_SAVE_DIR = 'models'
-WINDOW_SIZE = 60
 FEATURES = ['open', 'close', 'high', 'low', 'volume']
 TARGET_COLUMN = 'close'
 
 # --- Global Variables (Loaded on Startup) ---
-model_cache = {}  # Stores models, key is symbol, value is model
-scaler_cache = {}  # Stores scalers, key is symbol, value is scaler
-target_info_cache = {}  # Stores target info, key is symbol, value is (target_column_index, features)
-
+model_cache = {}  # Stores models, key is (symbol, window_size, forecast_size), value is model
+scaler_cache = {}  # Stores scalers, key is (symbol, window_size, forecast_size), value is scaler
+target_info_cache = {}  # Stores target info, key is (symbol, window_size, forecast_size), value is (target_column_index, features)
 
 def clean_symbol_name(filename):
     """Removes .json and replaces invalid chars for filenames."""
     symbol = filename.replace('.json', '')
-    #symbol = re.sub(r'[\\/*?:"<>|]', '_', symbol)  # Replace invalid chars <--- Remove
     return symbol
 
-def load_model_and_scaler(symbol):
-    """Loads the model, scaler, and target index for a given symbol (or retrieves from cache)."""
+def load_model_and_scaler(symbol, window_size, forecast_size):  # ADDED forecast_size
+    """Loads the pre-trained model, scaler, and target index for a given symbol, window_size and forecast (or retrieves from cache)."""
+    cache_key = (symbol, window_size, forecast_size)
 
-    if symbol in model_cache and symbol in scaler_cache and symbol in target_info_cache:
-        return model_cache[symbol], scaler_cache[symbol], target_info_cache[symbol]
+    if cache_key in model_cache and cache_key in scaler_cache and cache_key in target_info_cache:
+        print(f"Loading model from cache for: {cache_key}")
+        return model_cache[cache_key], scaler_cache[cache_key], target_info_cache[cache_key]
 
-    model_file = os.path.join(MODEL_SAVE_DIR, f'model_{symbol}.h5')
-    scaler_file = os.path.join(MODEL_SAVE_DIR, f'scaler_{symbol}.pkl')
-    target_index_file = os.path.join(MODEL_SAVE_DIR, f'target_index_{symbol}.json')
+    # Construct filename including the window_size and forecast_size
+    model_file = os.path.join(MODEL_SAVE_DIR, f'model_{symbol}_w{window_size}_f{forecast_size}.h5')
+    scaler_file = os.path.join(MODEL_SAVE_DIR, f'scaler_{symbol}_w{window_size}_f{forecast_size}.pkl')
+    target_index_file = os.path.join(MODEL_SAVE_DIR, f'target_index_{symbol}_w{window_size}_f{forecast_size}.json')
 
     try:
         print(f"Attempting to load model: {model_file}")  # Debugging
@@ -65,9 +65,9 @@ def load_model_and_scaler(symbol):
         print(f"Error loading target index {target_index_file}: {e}")
         return None, None, None
 
-    model_cache[symbol] = model
-    scaler_cache[symbol] = scaler
-    target_info_cache[symbol] = target_info  # Store in cache
+    model_cache[cache_key] = model
+    scaler_cache[cache_key] = scaler
+    target_info_cache[cache_key] = target_info  # Store in cache
 
     return model, scaler, target_info
 
@@ -76,19 +76,27 @@ def predict():
     """Endpoint for receiving OHLCV data and returning a prediction."""
     data = request.get_json()
 
-    if not data or 'symbol' not in data or 'ohlcv' not in data:
-        return jsonify({'error': 'Invalid request.  Requires "symbol" and "ohlcv" in the JSON payload.'}), 400
+    if not data or 'symbol' not in data or 'ohlcv' not in data or 'window_size' not in data or 'forecast_size' not in data:  # Added 'forecast_size' check
+        return jsonify({'error': 'Invalid request.  Requires "symbol", "ohlcv", "window_size", and "forecast_size" in the JSON payload.'}), 400
 
     symbol = clean_symbol_name(data['symbol'])  # Sanitize the symbol
     ohlcv_data = data['ohlcv']
+    window_size = data['window_size']  # Get window_size from request
+    forecast_size = data['forecast_size']  # Get forecast_size from request #Added Forecast_size and test
 
-    if not isinstance(ohlcv_data, list) or len(ohlcv_data) != WINDOW_SIZE:
-        return jsonify({'error': f'OHLCV data must be a list of length {WINDOW_SIZE}.'}), 400
+    if not isinstance(window_size, int) or window_size <= 0:
+        return jsonify({'error': '"window_size" must be a positive integer.'}), 400
 
-    # Load the model and scaler (from cache)
-    model, scaler, target_info = load_model_and_scaler(symbol)
+    if not isinstance(forecast_size, int) or forecast_size <= 0: #added Forecast_size and test
+        return jsonify({'error': '"forecast_size" must be a positive integer.'}), 400
+
+    if not isinstance(ohlcv_data, list) or len(ohlcv_data) != window_size:  # Dynamic length check
+        return jsonify({'error': f'OHLCV data must be a list of length {window_size}.'}), 400  # Dynamic error message
+
+    # Load the pre-trained model and scaler (from cache)
+    model, scaler, target_info = load_model_and_scaler(symbol, window_size, forecast_size)  # Pass forecast_size to loader #ADDED Forecast Size
     if model is None or scaler is None or target_info is None:
-        return jsonify({'error': f'Could not load model or scaler for symbol: {symbol}'}), 500
+        return jsonify({'error': f'Could not load model or scaler for symbol: {symbol} with window_size: {window_size} and forecast_size: {forecast_size}'}), 500 #added forecast size
 
     target_column_index, features = target_info
 
@@ -107,7 +115,7 @@ def predict():
         return jsonify({'error': f'Error during data preprocessing: {e}'}), 500
 
     # Reshape the data for LSTM input (batch_size, timesteps, features)
-    reshaped_data = np.reshape(scaled_data, (1, WINDOW_SIZE, len(features)))
+    reshaped_data = np.reshape(scaled_data, (1, window_size, len(features)))  # Dynamic window_size
 
     # --- Make Prediction ---
     try:
@@ -131,23 +139,25 @@ def predict():
 if __name__ == '__main__':
     # Preload models and scalers on startup.
     print("Preloading models and scalers...")
-    loaded_symbols = set()  # Track already loaded symbols to prevent infinite loops
+    loaded_models = set()  # Track already loaded (symbol, window_size, forecast_size) to prevent infinite loops
 
     for filename in os.listdir(MODEL_SAVE_DIR):
         if filename.startswith('model_') and filename.endswith('.h5'):
-            # Extract symbol from filename *correctly*
-            match = re.match(r"model_(.+)\.h5", filename)
+            # Extract symbol, window_size, and forecast_size from filename
+            match = re.match(r"model_(.+)_w(\d+)_f(\d+)\.h5", filename)  # Updated regex
             if match:
                 symbol = match.group(1)
-                print(f"Extracted symbol: {symbol} from filename: {filename}")  # Debug print
-                # Prevent Infinite Loops: Check if already loaded BEFORE calling load_model_and_scaler()
-                if symbol not in loaded_symbols:
-                    load_model_and_scaler(symbol)
-                    loaded_symbols.add(symbol)
+                window_size = int(match.group(2))
+                forecast_size = int(match.group(3)) # NEW
+                cache_key = (symbol, window_size, forecast_size)  # Key is tuple
+                if cache_key not in loaded_models:
+                    load_model_and_scaler(symbol, window_size, forecast_size)  # Updated call
+                    loaded_models.add(cache_key)  # Store cache key.
+                    print(f"Preloaded model for symbol: {symbol}, window_size: {window_size}, forecast_size: {forecast_size}")  # Updated print
                 else:
-                    print(f"Warning: Model for symbol '{symbol}' already loaded. Skipping.")
+                    print(f"Skipping preload for {cache_key}: Already loaded.")
             else:
-                print(f"Warning: Could not extract symbol from filename: {filename}")
+                print(f"Warning: Could not extract symbol, window_size and forecast_size from filename: {filename}")
 
     print("Models and scalers preloaded.")
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)  # Listen on all interfaces, disable reloader

@@ -26,9 +26,7 @@ func saveAI_Data(hist *history.History, symbol string) error {
 	return nil
 }
 
-// OHLCV represents a single OHLCV bar for the prediction request.
-// The Time field is removed because the Python server doesn't need it.
-// The field names MUST match the keys expected by the Python server.
+// OHLCV struct to match Python's expected format (exported fields!)
 type OHLCV struct {
 	Open   float64 `json:"open"`
 	Close  float64 `json:"close"`
@@ -37,36 +35,27 @@ type OHLCV struct {
 	Volume float64 `json:"volume"`
 }
 
-// PredictionRequest is the structure of the JSON payload sent to the
-// Python prediction server.
+// PredictionRequest struct
 type PredictionRequest struct {
-	Symbol string  `json:"symbol"`
-	OHLCV  []OHLCV `json:"ohlcv"`
+	Symbol       string  `json:"symbol"`
+	OHLCV        []OHLCV `json:"ohlcv"`
+	WindowSize   int     `json:"window_size"`   // ADDED window_size field
+	ForecastSize int     `json:"forecast_size"` // ADDED forecast_size field
 }
 
-// PredictionResponse is the structure of the JSON response received from
-// the Python prediction server.
+// PredictionResponse struct
 type PredictionResponse struct {
 	Prediction float64 `json:"prediction"`
 }
 
-const (
-	// predictionServerURL is the URL of the Python prediction server.
-	predictionServerURL = "http://localhost:5000/predict"
-
-	// windowSize is the number of OHLCV bars required for a prediction.
-	// This MUST match the WINDOW_SIZE in your Python training script and
-	// http_server.py.
-	windowSize = 60
-)
+var predictionServerURL = "http://localhost:5000/predict" // Replace with your actual URL
 
 // reqPrediction fetches a prediction from the Python prediction server for the
 // given symbol.
 func reqPrediction(symbol string, bars history.Bars) (float64, error) {
 	// --- Input Validation ---
-	if len(bars) != windowSize {
-		return 0, fmt.Errorf("bars must have length %d, but has length %d", windowSize, len(bars))
-	}
+	windowSize := len(bars)
+	forecastSize := 1 // Assuming forecastSize is always 1, adjust as needed
 
 	// Convert Bars to []OHLCV.  This is necessary to remove the Time field
 	// and to ensure that the field names match what the Python server expects.
@@ -83,8 +72,10 @@ func reqPrediction(symbol string, bars history.Bars) (float64, error) {
 
 	// Create the request payload.
 	reqBody := PredictionRequest{
-		Symbol: symbol,
-		OHLCV:  ohlcvData,
+		Symbol:       symbol,
+		OHLCV:        ohlcvData,
+		WindowSize:   windowSize,   // ADDED windowSize to request payload
+		ForecastSize: forecastSize, // ADDED forecastSize to request payload
 	}
 
 	// Marshal the request body to JSON.
@@ -141,17 +132,19 @@ type Prediction struct {
 
 // Predictor test strategy
 type Predictor struct {
-	predictions []Prediction
-	num         int
-	win         int
-	loss        int
-	WindowSize  int // Number of bars to use for prediction
+	predictions  []Prediction
+	num          int
+	win          int
+	loss         int
+	WindowSize   int // Number of bars to use for prediction
+	ForecastSize int // Number of bars to forecast
 }
 
-func NewPredictor(windowSize int) *Predictor {
+func NewPredictor(windowSize int, forecastSize int) *Predictor { //pass forecastSize
 	return &Predictor{
-		predictions: make([]Prediction, 0),
-		WindowSize:  windowSize, // Set the window size
+		predictions:  make([]Prediction, 0),
+		WindowSize:   windowSize,   // Set the window size
+		ForecastSize: forecastSize, //Set the Forecast Size
 	}
 }
 

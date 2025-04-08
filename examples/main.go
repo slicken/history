@@ -19,7 +19,6 @@ var (
 	events       = new(history.Events)       // we store our events here, if we want to save them
 	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
 	strategy     = NewEngulfing()            // lstn predicto strategy
-	predictor    = NewPredictor(60)
 	chart        = charts.NewHighChart()
 
 	config  = new(Config) // store argument configurations for example app
@@ -204,12 +203,14 @@ func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 func httpPredictor(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
 
+	strategy := NewPredictor(60, 1)
+
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
 
-	tester := history.NewTester(hist, predictor)
+	tester := history.NewTester(hist, strategy)
 	results, err := tester.Test(hist.FirstTime(), hist.LastTime())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -217,11 +218,11 @@ func httpPredictor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// print results
-	fmt.Println("Predicted events:", predictor.num)
-	fmt.Printf("Wins: %d\n", predictor.win)
-	fmt.Printf("Loss: %d\n", predictor.loss)
-	winRatio := float64(predictor.win) / float64(predictor.num) * 100
-	lossRatio := float64(predictor.loss) / float64(predictor.num) * 100
+	fmt.Println("Predicted events:", strategy.num)
+	fmt.Printf("Wins: %d\n", strategy.win)
+	fmt.Printf("Loss: %d\n", strategy.loss)
+	winRatio := float64(strategy.win) / float64(strategy.num) * 100
+	lossRatio := float64(strategy.loss) / float64(strategy.num) * 100
 	fmt.Printf("Win ratio: %.2f%%\nLoss ratio: %.2f%%\n", winRatio, lossRatio)
 
 	// build charts with the events from tester
