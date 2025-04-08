@@ -1,7 +1,6 @@
 package history
 
 import (
-	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -236,12 +235,12 @@ func (bars Bars) WriteCSV(filename string) error {
 	// Write data rows
 	for _, bar := range bars {
 		row := []string{
-			bar.Time.Format(time.RFC3339),
-			fmt.Sprintf("%f", bar.Open),
-			fmt.Sprintf("%f", bar.High),
-			fmt.Sprintf("%f", bar.Low),
-			fmt.Sprintf("%f", bar.Close),
-			fmt.Sprintf("%f", bar.Volume),
+			bar.Time.Format("2006-01-02 15:04:05"),
+			fmt.Sprintf("%.8f", bar.Open),
+			fmt.Sprintf("%.8f", bar.High),
+			fmt.Sprintf("%.8f", bar.Low),
+			fmt.Sprintf("%.8f", bar.Close),
+			fmt.Sprintf("%.8f", bar.Volume),
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %v", err)
@@ -249,43 +248,5 @@ func (bars Bars) WriteCSV(filename string) error {
 	}
 
 	log.Println("Wrote to CSV file:", filepath)
-	return nil
-}
-
-// ByteData holds byte data and error
-type ByteData struct {
-	data []byte
-	err  error
-}
-
-// ToFile writes ByteData to a file
-func (b ByteData) ToFile(filename string) error {
-	if b.err != nil {
-		return b.err
-	}
-
-	if err := os.MkdirAll(fileDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %v", err)
-	}
-
-	filepath := filepath.Join(fileDir, filename)
-	file, err := os.Create(filepath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
-	}
-	defer file.Close()
-
-	// Pretty print the JSON with indentation
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, b.data, "", "  "); err != nil {
-		return fmt.Errorf("failed to indent JSON: %v", err)
-	}
-
-	_, err = prettyJSON.WriteTo(file)
-	if err != nil {
-		return fmt.Errorf("failed to write data: %v", err)
-	}
-
-	log.Println("Wrote to file:", filepath)
 	return nil
 }

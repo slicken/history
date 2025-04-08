@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 
 	"github.com/slicken/history"
 )
@@ -88,23 +89,29 @@ func MakeVolume(bars history.Bars) ([]byte, error) {
 }
 
 // MakeEventFlags events
-func MakeEventFlags(events history.Events) ([]string, []string) {
-	var buy, sell = make([]string, 0), make([]string, 0)
+func MakeEventFlags(events history.Events) ([]string, []string, []string, []string) {
+	var buy, sell, close, forecast = make([]string, 0), make([]string, 0), make([]string, 0), make([]string, 0)
 
 	for _, event := range events {
-		// s := fmt.Sprintf(`{"x":%d,"title":%q,"text":%q},`, event.Time.Unix()*1000, EventTypes[event.Type], fmt.Sprintf("%s\n%s", event.Title, event.Text))
-
-		if event.Type == 0 || event.Type == 2 || event.Type == 5 {
+		if event.Type == history.MARKET_BUY || event.Type == history.LIMIT_BUY || event.Type == history.STOP_BUY {
 			s := fmt.Sprintf(`{"x":%d,"title":"B","text":%q},`, event.Time.Unix()*1000, (event.Name + " " + history.EventTypes[event.Type] + " " + event.Text))
 			buy = append(buy, s)
 		}
-		if event.Type == 1 || event.Type == 3 || event.Type == 4 {
+		if event.Type == history.MARKET_SELL || event.Type == history.LIMIT_SELL || event.Type == history.STOP_SELL {
 			s := fmt.Sprintf(`{"x":%d,"title":"S","text":%q},`, event.Time.Unix()*1000, (event.Name + " " + history.EventTypes[event.Type] + " " + event.Text))
 			sell = append(sell, s)
 		}
+		if event.Type == history.CLOSE {
+			s := fmt.Sprintf(`{"x":%d,"title":"C","text":%q},`, event.Time.Unix()*1000, (event.Name + " " + history.EventTypes[event.Type] + " " + event.Text))
+			close = append(close, s)
+		}
+		if event.Type == history.FORECAST {
+			s := fmt.Sprintf(`[%d,%f],`, event.Time.Unix()*1000, event.Price)
+			forecast = append(forecast, s)
+		}
 	}
 
-	return buy, sell
+	return buy, sell, close, forecast
 }
 
 // MakeHeader creates chart headers
@@ -136,7 +143,7 @@ func (c *HighChart) MakeHeader() ([]byte, error) {
 	 </style>`), nil
 }
 
-// MakeChart template
+// MakeChart creates a chart for a symbol
 func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Events) ([]byte, error) {
 	if name == "" {
 		name = "unknown"
@@ -214,7 +221,7 @@ func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Eve
 		},
 
 		rangeSelector: {
-			enabled: false, // enable?
+			enabled: false,
 			inputEnabled: false,
             selected: 3,
 		},
@@ -266,7 +273,7 @@ func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Eve
 
 		func() (s string) {
 			// flags data
-			flagB, flagS := MakeEventFlags(events)
+			flagB, flagS, flagC, flagF := MakeEventFlags(events)
 
 			// B flag
 			if len(flagB) > 0 {
@@ -297,6 +304,33 @@ func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Eve
 					style: {
 						color: 'white'
 					},`
+			}
+			// C flag
+			if len(flagC) > 0 {
+				s += `
+				}, {
+					type: 'flags',
+					data: ` + fmt.Sprintf("%s", flagC) + `,
+					zIndex: 21,
+					onSeries: '` + name + `',
+					shape: 'circlepin',
+					color: '#4169E1',
+					fillColor: '#4169E1',
+					style: {
+						color: 'white'
+					},`
+			}
+			// Forecast line
+			if len(flagF) > 0 {
+				s += `
+				}, {
+					type: 'spline',
+					name: 'AI Forecast',
+					data: [` + strings.Join(flagF, "") + `],
+					zIndex: 22,
+					color: '#FFD700',
+					lineWidth: 2,
+					dashStyle: 'ShortDash',`
 			}
 
 			// volume

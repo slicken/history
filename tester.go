@@ -6,12 +6,18 @@ import (
 	"time"
 )
 
-const dt_stamp = "2006/01/02 15:04"
+const dtFormat = "2006/01/02 15:04"
 
 // PortfolioStrategy interface for strategies that use portfolio management
 type PortfolioStrategy interface {
 	Strategy
 	GetPortfolioManager() *PortfolioManager
+}
+
+// TestResult contains the test results including events and portfolio stats
+type TestResult struct {
+	Events         *Events
+	PortfolioStats *PortfolioStats
 }
 
 // Tester handles backtesting of strategies
@@ -31,12 +37,21 @@ func NewTester(hist *History, strategy Strategy) *Tester {
 }
 
 // Test runs the strategy on historical data between start and end time
-func (t *Tester) Test(start, end time.Time) (*Events, error) {
+func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 	if len(t.hist.bars) == 0 {
 		return nil, errors.New("no history")
 	}
 
-	log.Printf("[TEST] %s [%v ==> %v]\n", t.strategy.Name(), start.Format(dt_stamp), end.Format(dt_stamp))
+	log.Printf("[TEST] %s [%v ==> %v]\n", t.strategy.Name(), start.Format(dtFormat), end.Format(dtFormat))
+
+	// Check if strategy implements PortfolioStrategy interface
+	portfolioStrat, hasPortfolio := t.strategy.(PortfolioStrategy)
+	var portfolio *PortfolioManager
+	if hasPortfolio {
+		portfolio = portfolioStrat.GetPortfolioManager()
+		// Double check that we actually got a portfolio manager
+		hasPortfolio = portfolio != nil
+	}
 
 	// Get all symbols from history
 	symbols := make([]string, 0)
@@ -61,7 +76,7 @@ func (t *Tester) Test(start, end time.Time) (*Events, error) {
 		period := bars.Period()
 
 		// Create a channel to receive bars using StreamInterval
-		barChan := bars.StreamInterval(start, end, period)
+		barChan := bars.StreamInterval(start, end, period) // Use StreamInterval
 
 		// Process bars as they arrive
 		var currentBars Bars
@@ -72,18 +87,55 @@ func (t *Tester) Test(start, end time.Time) (*Events, error) {
 			}
 
 			// Add the new bar to our current bars
-			currentBars = append(Bars{bar}, currentBars...)
+			currentBars = append(currentBars, bar)
+
+			// Reverse the currentBars slice so newest is first
+			for i, j := 0, len(currentBars)-1; i < j; i, j = i+1, j-1 {
+				currentBars[i], currentBars[j] = currentBars[j], currentBars[i]
+			}
+
+			// Update portfolio positions with current price if portfolio exists
+			if hasPortfolio && portfolio != nil {
+				portfolio.UpdatePosition(symbol, bar.Close)
+			}
+
+			// Set context for the current bar if strategy supports it
+			if baseStrat, ok := t.strategy.(interface{ SetContext(string, Bar) }); ok {
+				baseStrat.SetContext(symbol, bar)
+			}
 
 			// Process strategy with all bars up to this point
 			if event, ok := t.strategy.OnBar(symbol, currentBars); ok {
 				// Add event to events list
-				t.events.Add(event)
+				if !t.events.Add(event) {
+					log.Printf("[TEST] could not add event: %+v\n", event)
+				}
 			}
 		}
 	}
 
+	result := &TestResult{
+		Events: t.events,
+	}
+
+	// Add portfolio stats if available
+	if hasPortfolio && portfolio != nil {
+		stats := portfolio.GetStats()
+		result.PortfolioStats = &stats
+
+		log.Printf("[PORTFOLIO] Final Balance: %.2f (%+.2f%%)\n",
+			result.PortfolioStats.CurrentBalance,
+			(result.PortfolioStats.CurrentBalance-result.PortfolioStats.InitialBalance)/result.PortfolioStats.InitialBalance*100)
+		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d trades)\n",
+			result.PortfolioStats.WinRate*100,
+			result.PortfolioStats.WinningTrades,
+			result.PortfolioStats.TotalTrades)
+		log.Printf("[PORTFOLIO] Max Drawdown: %.2f%%\n",
+			result.PortfolioStats.MaxDrawdown*100)
+	}
+
 	log.Printf("[TEST] completed with %d Events\n", len(*t.events))
-	return t.events, nil
+	return result, nil
 }
 
 // ClearEvents removes all events

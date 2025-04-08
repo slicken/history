@@ -2,6 +2,7 @@ package history
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -135,15 +136,15 @@ func (bars Bars) JSON() []byte {
 // "SELECT UNIX_TIMESTAMP(time) as timestamp, ROUND(open,4) as open_price, ROUND(close,2) as close_price"
 // "SELECT time, open, high, low, close" -- standard fields
 // "SELECT DATE_FORMAT(time, '%Y-%m-%dT%H:%i:%sZ') as timestamp, *" -- ISO8601 time with all fields
-func (bars Bars) FormatBytes(inputQuery string) ByteData {
+func (bars Bars) FormatBytes(inputQuery string) ([]byte, error) {
 	if len(bars) == 0 {
-		return ByteData{data: []byte("[]"), err: nil}
+		return nil, errors.New("not enogugh bars")
 	}
 
 	// Parse the query to determine field selection and transformations
 	fields, err := parseExportQuery(inputQuery)
 	if err != nil {
-		return ByteData{err: fmt.Errorf("invalid query: %v", err)}
+		return nil, fmt.Errorf("invalid query: %v", err)
 	}
 
 	// Build the result array
@@ -171,8 +172,7 @@ func (bars Bars) FormatBytes(inputQuery string) ByteData {
 		result = append(result, item)
 	}
 
-	data, err := json.Marshal(result)
-	return ByteData{data: data, err: err}
+	return json.Marshal(result)
 }
 
 type exportField struct {

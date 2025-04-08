@@ -18,7 +18,8 @@ var (
 	hist         = new(history.History)      // main struct to control bars data
 	events       = new(history.Events)       // we store our events here, if we want to save them
 	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
-	strategy     = NewPredictor()            // lstn predicto strategy
+	strategy     = NewEngulfing()            // lstn predicto strategy
+	predictor    = NewPredictor(60)
 	chart        = charts.NewHighChart()
 
 	config  = new(Config) // store argument configurations for example app
@@ -118,7 +119,7 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// Setup EventHandler and subscribe to events
 	// ----------------------------------------------------------------------------------------------
-	eventHandler.AddStrategy(strategy)
+	// eventHandler.AddStrategy(strategy)
 	// eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
 	// 	log.Printf("--- Bind your function to MARKET_BUY event\n")
 	// 	return nil
@@ -127,9 +128,9 @@ Options:
 	// 	log.Printf("--- Bind your function to MARKET_SELL event\n")
 	// 	return nil
 	// })
-	if err := eventHandler.Start(hist, events); err != nil {
-		log.Fatal("could not start event handler:", err)
-	}
+	// if err := eventHandler.Start(hist, events); err != nil {
+	// 	log.Fatal("could not start event handler:", err)
+	// }
 	// ----------------------------------------------------------------------------------------------
 	// highchart
 	// ----------------------------------------------------------------------------------------------
@@ -138,6 +139,7 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
+
 	if config.saveAI_data {
 		time.Sleep(10 * time.Second)
 
@@ -183,14 +185,14 @@ func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tester := history.NewTester(hist, strategy)
-	events, err := tester.Test(hist.FirstTime(), hist.LastTime())
+	results, err := tester.Test(hist.FirstTime(), hist.LastTime())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// build charts with the events from tester
-	c, err := chart.BuildCharts(hist.Map(), events.Map())
+	c, err := chart.BuildCharts(hist.Map(), results.Events.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -201,30 +203,29 @@ func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 // httpPredictor plots predicted price on chart
 func httpPredictor(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
-	strategy := NewPredictor()
 
 	// limit bars
 	if config.limit > 0 {
 		hist.Limit(config.limit)
 	}
 
-	tester := history.NewTester(hist, strategy)
-	events, err := tester.Test(hist.FirstTime(), hist.LastTime())
+	tester := history.NewTester(hist, predictor)
+	results, err := tester.Test(hist.FirstTime(), hist.LastTime())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// print results
-	fmt.Println("Predicted events:", strategy.num)
-	fmt.Printf("Wins: %d\n", strategy.win)
-	fmt.Printf("Loss: %d\n", strategy.loss)
-	winRatio := float64(strategy.win) / float64(strategy.num) * 100
-	lossRatio := float64(strategy.loss) / float64(strategy.num) * 100
+	fmt.Println("Predicted events:", predictor.num)
+	fmt.Printf("Wins: %d\n", predictor.win)
+	fmt.Printf("Loss: %d\n", predictor.loss)
+	winRatio := float64(predictor.win) / float64(predictor.num) * 100
+	lossRatio := float64(predictor.loss) / float64(predictor.num) * 100
 	fmt.Printf("Win ratio: %.2f%%\nLoss ratio: %.2f%%\n", winRatio, lossRatio)
 
 	// build charts with the events from tester
-	c, err := chart.BuildCharts(hist.Map(), events.Map())
+	c, err := chart.BuildCharts(hist.Map(), results.Events.Map())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -243,7 +244,9 @@ type Engulfing struct {
 }
 
 func NewEngulfing() *Engulfing {
-	return &Engulfing{}
+	return &Engulfing{
+		BaseStrategy: *history.NewBaseStrategy("Engulfing"),
+	}
 }
 
 // Event EngulfingN..
@@ -252,10 +255,15 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		return history.Event{}, false
 	}
 
+	// close position on next bar
+	if _, exists := s.GetPortfolioManager().Positions[symbol]; exists {
+		return s.Close(), true
+	}
+
 	SMA := bars[0:20].SMA(history.C)
 	ATR := bars[1:4].ATR()
 
-	// MARKET_BUY
+	// MARKET_BUY signal
 	if bars.LastBearIdx() < 5 &&
 		bars[0].C()-SMA < 2*ATR &&
 		bars[0].C() > bars[bars.LastBearIdx()].H() &&
@@ -264,10 +272,10 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() > SMA {
 
-		// send helper function for BaseStrategy MarketBuy
+		return s.BuyEvent(2000, bars[0].C()), true
 	}
 
-	// MARKET_SELL
+	// MARKET_SELL signal
 	if bars.LastBullIdx() < 5 &&
 		bars[0].O() > bars[bars.LastBullIdx()].L() &&
 		bars[0].C() < bars[bars.LastBullIdx()].L() &&
@@ -275,7 +283,7 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() < SMA {
 
-		// send helper function for BaseStrategy MarketBuy
+		return s.SellEvent(2000, bars[0].C()), true
 	}
 
 	return history.Event{}, false

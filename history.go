@@ -15,7 +15,7 @@ import (
 type History struct {
 	bars   map[string]Bars
 	update bool
-	// C notify channel when we got now bars for a history (symbol)
+	// Notify channel when new bars are added for any loaded symbol
 	C chan string
 	// Plug diffrent downloaders
 	Downloader
@@ -157,8 +157,6 @@ func (h *History) Limit(length int) *History {
 
 // LimiTime the data for specified data time intervalls
 func (h *History) LimitTime(start, end time.Time) *History {
-	// h.Lock()
-	// defer h.Unlock()
 	var wg sync.WaitGroup
 
 	for symbol := range h.bars {
@@ -233,7 +231,7 @@ func (h *History) Add(symbol string, bars Bars) error {
 
 	b, ok := h.bars[symbol]
 	if !ok {
-		msg = "loaded"
+		msg = fmt.Sprintf("loaded %d bars", len(bars))
 
 		h.bars[symbol] = bars
 		// increase cap by +1
@@ -252,7 +250,7 @@ func (h *History) Add(symbol string, bars Bars) error {
 		return errors.New("no new bars")
 	} else {
 		// save bars
-		msg = fmt.Sprintf("added %d bars", len(bars))
+		msg = fmt.Sprintf("added %d new bars", len(bars))
 		if err := h.WriteBars(symbol, bars); err != nil {
 			log.Printf("could not save %s bars: %v\n", symbol, err)
 		}
@@ -272,9 +270,9 @@ func (h *History) Add(symbol string, bars Bars) error {
 
 	log.Println(symbol, msg)
 
-	// notify data.C that we have bars
+	// notify that we have new bars
 	select {
-	case h.C <- (symbol):
+	case h.C <- symbol:
 	default:
 	}
 

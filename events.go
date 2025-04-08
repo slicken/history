@@ -26,9 +26,10 @@ const (
 	LIMIT_SELL                   // Limit sell order
 	STOP_BUY                     // Stop buy order (can be used for breakout or stop loss buy)
 	STOP_SELL                    // Stop sell order (can be used for stop loss or take profit)
-	DELETE                       // Delete/cancel pending orders
+	CLOSE                        // Close position event
 	NEWS                         // News event
 	OTHER                        // Other custom events
+	FORECAST                     // Forecast event
 )
 
 // EventTypes
@@ -39,9 +40,10 @@ var EventTypes = map[EventType]string{
 	LIMIT_SELL:  "LIMIT_SELL",
 	STOP_BUY:    "STOP_BUY",
 	STOP_SELL:   "STOP_SELL",
-	DELETE:      "DELETE",
+	CLOSE:       "CLOSE",
 	NEWS:        "NEWS",
 	OTHER:       "OTHER",
+	FORECAST:    "FORECAST",
 }
 
 // NewEvent creates a new event for a symbol

@@ -12,7 +12,7 @@ type EventHandler struct {
 	handlers   map[EventType][]EventCallback
 	strategies []Strategy
 	running    bool
-	mu         sync.RWMutex
+	*sync.RWMutex
 }
 
 // EventCallback is a function type that handles events
@@ -29,8 +29,8 @@ func NewEventHandler() *EventHandler {
 
 // Subscribe adds a callback function for a specific event type
 func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback) {
-	eh.mu.Lock()
-	defer eh.mu.Unlock()
+	eh.Lock()
+	defer eh.Unlock()
 
 	if _, exists := eh.handlers[eventType]; !exists {
 		eh.handlers[eventType] = make([]EventCallback, 0)
@@ -40,8 +40,8 @@ func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback) {
 
 // Unsubscribe removes a callback function for a specific event type
 func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback) {
-	eh.mu.Lock()
-	defer eh.mu.Unlock()
+	eh.Lock()
+	defer eh.Unlock()
 
 	if callbacks, exists := eh.handlers[eventType]; exists {
 		for i, cb := range callbacks {
@@ -55,9 +55,9 @@ func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback)
 
 // Handle processes an event by calling all registered callbacks for its type
 func (eh *EventHandler) Handle(event Event) error {
-	eh.mu.RLock()
+	eh.RLock()
 	callbacks, exists := eh.handlers[event.Type]
-	eh.mu.RUnlock()
+	eh.RUnlock()
 
 	if !exists {
 		return nil // No handlers for this event type
@@ -84,20 +84,20 @@ func (eh *EventHandler) HandleEvents(events Events) error {
 
 // Clear removes all event handlers
 func (eh *EventHandler) Clear() {
-	eh.mu.Lock()
+	eh.Lock()
 	eh.handlers = make(map[EventType][]EventCallback)
-	eh.mu.Unlock()
+	eh.Unlock()
 }
 
 // Start event handler
 func (eh *EventHandler) Start(hist *History, events *Events) error {
-	eh.mu.Lock()
+	eh.Lock()
 	if eh.running {
-		eh.mu.Unlock()
+		eh.Unlock()
 		return errors.New("already running")
 	}
 	eh.running = true
-	eh.mu.Unlock()
+	eh.Unlock()
 
 	log.Println("[EVENTHANDLER] started")
 
@@ -130,13 +130,13 @@ func (eh *EventHandler) Start(hist *History, events *Events) error {
 				}
 
 			default:
-				eh.mu.RLock()
+				eh.RLock()
 				if !eh.running {
-					eh.mu.RUnlock()
+					eh.RUnlock()
 					log.Println("[EVENTHANDLER] stopped")
 					return
 				}
-				eh.mu.RUnlock()
+				eh.RUnlock()
 			}
 		}
 	}()
@@ -145,8 +145,8 @@ func (eh *EventHandler) Start(hist *History, events *Events) error {
 
 // Stop event handler
 func (eh *EventHandler) Stop() error {
-	eh.mu.Lock()
-	defer eh.mu.Unlock()
+	eh.Lock()
+	defer eh.Unlock()
 
 	if !eh.running {
 		return errors.New("not running")
@@ -157,8 +157,8 @@ func (eh *EventHandler) Stop() error {
 
 // AddStrategy adds a strategy to the handler
 func (eh *EventHandler) AddStrategy(strategy Strategy) error {
-	eh.mu.Lock()
-	defer eh.mu.Unlock()
+	eh.Lock()
+	defer eh.Unlock()
 
 	name := fmt.Sprintf("%T", strategy)[6:]
 
@@ -174,8 +174,8 @@ func (eh *EventHandler) AddStrategy(strategy Strategy) error {
 
 // RemoveStrategy removes a strategy from the handler
 func (eh *EventHandler) RemoveStrategy(strategy Strategy) error {
-	eh.mu.Lock()
-	defer eh.mu.Unlock()
+	eh.Lock()
+	defer eh.Unlock()
 
 	name := fmt.Sprintf("%T", strategy)[6:]
 
@@ -195,8 +195,8 @@ func (eh *EventHandler) RemoveStrategy(strategy Strategy) error {
 
 // ListStrategies lists all added strategies
 func (eh *EventHandler) ListStrategies() {
-	eh.mu.RLock()
-	defer eh.mu.RUnlock()
+	eh.RLock()
+	defer eh.RUnlock()
 
 	for _, strategy := range eh.strategies {
 		_name := fmt.Sprintf("%T", strategy)[6:]

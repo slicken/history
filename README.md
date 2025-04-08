@@ -77,49 +77,75 @@ func main() {
 ### Implementing a Strategy
 
 ```go
-type MyStrategy struct {
+// SMA Crossover strategy example
+type SMACrossover struct {
     history.BaseStrategy
 }
 
-func (s *MyStrategy) Name() string {
-    return "MyStrategy"
+func NewSMACrossover() *SMACrossover {
+    return &SMACrossover{
+        BaseStrategy: *history.NewBaseStrategy("SMACrossover"),
+    }
 }
 
-func (s *MyStrategy) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+func (s *SMACrossover) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
     if len(bars) < 20 {
         return history.Event{}, false
     }
 
-    // Calculate indicators
-    sma := bars[:20].SMA(history.C)  // 20-period SMA on close price
-    lastClose := bars[0].Close
+    // Calculate SMAs
+    sma10 := bars[0:10].SMA(history.C)
+    sma20 := bars[0:20].SMA(history.C)
+    prevSma10 := bars[1:11].SMA(history.C)
+    prevSma20 := bars[1:21].SMA(history.C)
 
-    // Generate buy signal
-    if lastClose > sma {
-        return history.Event{
-            Symbol: symbol,
-            Name:   s.Name(),
-            Type:   history.MARKET_BUY,
-            Time:   bars[0].Time,
-            Price:  lastClose,
-            Text:   "Price crossed above SMA",
-        }, true
+    // Get current position
+    portfolio := s.GetPortfolioManager()
+    position, hasPosition := portfolio.Positions[symbol]
+
+    // Close position if exists and crossover in opposite direction
+    if hasPosition {
+        if (position.Side && prevSma10 > prevSma20 && sma10 < sma20) || // Close long on death cross
+           (!position.Side && prevSma10 < prevSma20 && sma10 > sma20) {  // Close short on golden cross
+            return s.Close(), true
+        }
+        return history.Event{}, false
+    }
+
+    // Buy on golden cross (10 SMA crosses above 20 SMA)
+    if prevSma10 < prevSma20 && sma10 > sma20 {
+        return s.Buy(), true // Uses default size of 1000
+        // Or with custom size: return s.BuyEvent(2000, bars[0].Close), true
+    }
+
+    // Sell on death cross (10 SMA crosses below 20 SMA)
+    if prevSma10 > prevSma20 && sma10 < sma20 {
+        return s.Sell(), true // Uses default size of 1000
+        // Or with custom size: return s.SellEvent(2000, bars[0].Close), true
     }
 
     return history.Event{}, false
 }
 
-// Using the strategy
+// Name returns the strategy name
+func (s *SMACrossover) Name() string {
+    return "SMACrossover"
+}
+
+// Usage:
 func main() {
+    // Initialize components
     hist, _ := history.New()
-    strategy := &MyStrategy{}
+    strategy := NewSMACrossover()
     
-    // Create event handler
-    eh := history.NewEventHandler()
-    eh.AddStrategy(strategy)
+    // Backtest the strategy
+    tester := history.NewTester(hist, strategy)
+    results, _ := tester.Test(hist.FirstTime(), hist.LastTime())
     
-    // Start processing events
-    eh.Start(hist, new(history.Events))
+    // Access results
+    fmt.Printf("Final Balance: %.2f\n", results.PortfolioStats.CurrentBalance)
+    fmt.Printf("Win Rate: %.2f%%\n", results.PortfolioStats.WinRate * 100)
+    fmt.Printf("Max Drawdown: %.2f%%\n", results.PortfolioStats.MaxDrawdown * 100)
 }
 ```
 
@@ -129,12 +155,20 @@ func main() {
 
 ```go
 type History struct {
-    Downloader           // Interface for data downloading
+    bars       map[string]Bars
+    update     bool
+    C          chan string    // Notify channel for new bars
+    Downloader                // Interface for data downloading
+    db         *sql.DB        // SQLite3 database connection
 }
 
-// Core Functions
+// Core Methods
 func New() (*History, error)                                    // Create new History instance with SQLite DB
-func (h *History) GetBars(symbol string) Bars                   // Get bars for a symbol
+func (h *History) SetMaxLimit(v int)                           // Set maximum limit for data requests
+func (h *History) StoredSymbols() ([]string, error)           // Get all symbols from database
+func (h *History) ReadBars(symbol string) (Bars, error)        // Load bars from database
+func (h *History) WriteBars(symbol string, bars Bars) error    // Save bars to database
+func (h *History) GetBars(symbol string) Bars                  // Get bars for a symbol
 func (h *History) Map() map[string]Bars                        // Get all bars
 func (h *History) MinPeriod() time.Duration                    // Get minimum period across all histories
 func (h *History) FirstTime() time.Time                        // Get earliest time across all histories
@@ -145,12 +179,6 @@ func (h *History) Update(enabled bool)                         // Enable/disable
 func (h *History) Limit(length int) *History                   // Limit data length
 func (h *History) LimitTime(start, end time.Time) *History     // Limit data to time range
 func (h *History) Unload(symbol string) error                  // Remove symbol from memory
-func (h *History) ReprocessHistory(limit int) error            // Redownload and process history
-
-// Database Operations
-func (h *History) StoredSymbols() ([]string, error)           // Get all symbols from database
-func (h *History) ReadBars(symbol string) (Bars, error)        // Load bars from database
-func (h *History) WriteBars(symbol string, bars Bars) error    // Save bars to database
 ```
 
 ### Bar (bar.go)
@@ -190,10 +218,10 @@ func (b Bar) WickUp() float64
 func (b Bar) WickDn() float64
 func (b Bar) PercMove() float64
 
-// Timeframe Functions
-func TFInterval(tf string) Timeframe
-func TFString(tf Timeframe) string
-func TFIsValid(tf string) bool
+// Additional Bar Methods
+func (b Bar) Bullish() bool                                    // Returns true if bar closes in upper 33%
+func (b Bar) Bearish() bool                                    // Returns true if bar closes in bottom 33%
+func (b Bar) PercMove() float64                                // Calculate percentage move (close-open)/open * 100
 ```
 
 ### Bars (bars.go)
@@ -225,7 +253,7 @@ type Event struct {
     Symbol string    
     Name   string    
     Text   string    
-    Type   EventType 
+    Type   EventType // BUY, SELL, CLOSE
     Time   time.Time 
     Price  float64   
     Size   float64   
@@ -268,6 +296,14 @@ func (eh *EventHandler) Subscribe(eventType EventType, callback EventCallback)
 func (eh *EventHandler) Unsubscribe(eventType EventType, callback EventCallback)
 func (eh *EventHandler) Handle(event Event) error
 func (eh *EventHandler) HandleEvents(events Events) error
+
+// Additional EventHandler Methods
+func (eh *EventHandler) Clear()                                // Remove all event handlers
+func (eh *EventHandler) Start(hist *History, events *Events) error    // Start processing events
+func (eh *EventHandler) Stop() error                           // Stop processing events
+func (eh *EventHandler) AddStrategy(strategy Strategy) error   // Add a strategy to the handler
+func (eh *EventHandler) RemoveStrategy(strategy Strategy) error // Remove a strategy
+func (eh *EventHandler) ListStrategies()                      // List all added strategies
 ```
 
 ### Streamer (streamer.go)
@@ -311,6 +347,13 @@ func (bars Bars) IsEngulfSell() bool
 // Helper Functions
 func WithinRange(src, dest, r float64) bool
 func CalcPercentage(n, total float64) float64
+
+// Additional Technical Indicators
+func (bars Bars) RSI(period int) float64                       // Relative Strength Index
+func (bars Bars) Stochastic(period int) (k, d float64)        // Stochastic Oscillator (%K and %D)
+func (bars Bars) IsPinbarBuy() bool                           // Check for bullish pinbar pattern
+func (bars Bars) IsPinbarSell() bool                          // Check for bearish pinbar pattern
+func (bars Bars) TDSequential() int                           // TD Sequential indicator
 ```
 
 ### Strategy (strategy.go)
@@ -336,6 +379,8 @@ type Position struct {
     EntryPrice float64
     Size       float64
     Current    float64
+    PnL        float64
+    OpenEvent  Event    // Reference to the event that opened this position
 }
 
 type PortfolioManager struct {
@@ -345,53 +390,15 @@ type PortfolioManager struct {
 
 // Methods
 func NewPortfolioManager(initialBalance float64) *PortfolioManager
+
+// Portfolio Management Features:
+// - Dynamic position sizing based on account balance
+// - Accurate PnL calculations for both long and short positions
+// - Position tracking with reference to opening events
+// - Support for multiple positions across different symbols
+// - Real-time unrealized PnL tracking
 ```
 
 ### Utility Functions (utils.go)
 
-```go
-// Symbol Management
-func SplitSymbol(s string) (pair string, tf string)
-func ToUnixTime(t time.Time) int64
-func calcLimit(last time.Time, period time.Duration) int
-
-// File Operations
-func (b ByteData) ToFile(filename string) error
 ```
-
-### Binance Integration (examples/downloader.go)
-
-```go
-type Binance struct{}
-
-// Core Methods
-func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error)
-func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string, error)
-func GetExchangeInfo() (ExchangeInfo, error)
-```
-
-## Contributing
-
-Contributions are welcome! Areas where we need help:
-
-1. Portfolio management implementation
-2. Additional technical indicators
-3. Strategy development tools
-4. Performance optimizations
-5. Documentation improvements
-6. Testing and bug fixes
-
-Please follow these steps:
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-[Your chosen license]
-
-## Disclaimer
-
-This software is for educational purposes only. Use at your own risk. Past performance does not guarantee future results.
