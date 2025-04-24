@@ -2,6 +2,7 @@ package history
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -48,14 +49,14 @@ func (s *BaseStrategy) Buy() Event {
 }
 
 // BuyEvent creates a buy event with specified size and price
-func (s *BaseStrategy) BuyEvent(size float64, price float64) Event {
+func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 	event := Event{
 		Symbol: s.symbol,
 		Name:   s.name,
 		Type:   MARKET_BUY,
 		Time:   s.time,
 		Price:  price,
-		Size:   size,
+		Size:   riskAmount, // This is now the USD value we want to risk
 		Text:   "Buy",
 	}
 
@@ -64,15 +65,20 @@ func (s *BaseStrategy) BuyEvent(size float64, price float64) Event {
 		s.portfolio.Lock()
 		defer s.portfolio.Unlock()
 
+		// Calculate position size based on available balance and risk
+		positionSize := math.Min(riskAmount, s.portfolio.Balance*s.portfolio.RiskPerTrade)
+		units := positionSize / price // Calculate actual units to buy
+
 		// Open long position if we have enough balance
-		if s.portfolio.Balance >= size {
-			s.portfolio.Balance -= size // Deduct the position size from balance
+		if s.portfolio.Balance >= positionSize {
+			s.portfolio.Balance -= positionSize // Deduct the position size from balance
 			s.portfolio.Positions[s.symbol] = &Position{
 				Symbol:     s.symbol,
 				Side:       true, // long
 				EntryTime:  s.time,
 				EntryPrice: price,
-				Size:       event.Size,
+				Size:       positionSize,
+				Units:      units,
 				Current:    price,
 				OpenEvent:  event,
 			}
@@ -88,14 +94,14 @@ func (s *BaseStrategy) Sell() Event {
 }
 
 // SellEvent creates a sell event with specified size and price
-func (s *BaseStrategy) SellEvent(size float64, price float64) Event {
+func (s *BaseStrategy) SellEvent(riskAmount float64, price float64) Event {
 	event := Event{
 		Symbol: s.symbol,
 		Name:   s.name,
 		Type:   MARKET_SELL,
 		Time:   s.time,
 		Price:  price,
-		Size:   size,
+		Size:   riskAmount, // This is now the USD value we want to risk
 		Text:   "Sell",
 	}
 
@@ -104,15 +110,20 @@ func (s *BaseStrategy) SellEvent(size float64, price float64) Event {
 		s.portfolio.Lock()
 		defer s.portfolio.Unlock()
 
+		// Calculate position size based on available balance and risk
+		positionSize := math.Min(riskAmount, s.portfolio.Balance*s.portfolio.RiskPerTrade)
+		units := positionSize / price // Calculate actual units to sell
+
 		// Open short position if we have enough balance
-		if s.portfolio.Balance >= size {
-			s.portfolio.Balance -= size // Deduct the position size from balance
+		if s.portfolio.Balance >= positionSize {
+			s.portfolio.Balance -= positionSize // Deduct the position size from balance
 			s.portfolio.Positions[s.symbol] = &Position{
 				Symbol:     s.symbol,
 				Side:       false, // short
 				EntryTime:  s.time,
 				EntryPrice: price,
-				Size:       event.Size,
+				Size:       positionSize,
+				Units:      units,
 				Current:    price,
 				OpenEvent:  event,
 			}

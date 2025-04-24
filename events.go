@@ -134,7 +134,11 @@ func (events *Events) Add(event Event) bool {
 		return false
 	}
 	for i := len(*events) - 1; i >= 0; i-- {
-		if event.Time == (*events)[i].Time && event.Price == (*events)[i].Price {
+		// Consider an event duplicate only if it has the same symbol, time, price, and type
+		if event.Symbol == (*events)[i].Symbol &&
+			event.Time == (*events)[i].Time &&
+			event.Price == (*events)[i].Price &&
+			event.Type == (*events)[i].Type {
 			return false
 		}
 	}

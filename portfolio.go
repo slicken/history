@@ -11,7 +11,8 @@ type Position struct {
 	Side       bool      // true for long, false for short
 	EntryTime  time.Time // When position was opened
 	EntryPrice float64   // Entry price
-	Size       float64   // Position size
+	Size       float64   // Position size in USD value
+	Units      float64   // Actual units of the asset
 	Current    float64   // Current price
 	PnL        float64   // Current unrealized profit/loss
 	OpenEvent  Event     // Event that opened this position
@@ -19,20 +20,18 @@ type Position struct {
 
 // PositionValue returns the current value of the position
 func (p Position) PositionValue() float64 {
-	return p.Size // Always 1000 since we use fixed size
+	return p.Size // Return size in USD value
 }
 
 // UnrealizedPnL returns the unrealized profit/loss of the position
 func (p Position) UnrealizedPnL() float64 {
-	// Scale factor is position size relative to initial balance (10000)
-	scaleFactor := p.Size / 10000.0
-
+	// Calculate PnL based on actual units and price difference
 	if p.Side {
-		// Long position: profit = (current - entry) scaled by size/balance
-		return (p.Current - p.EntryPrice) * scaleFactor
+		// Long position: profit = (current - entry) * units
+		return (p.Current - p.EntryPrice) * p.Units
 	}
-	// Short position: profit = (entry - current) scaled by size/balance
-	return (p.EntryPrice - p.Current) * scaleFactor
+	// Short position: profit = (entry - current) * units
+	return (p.EntryPrice - p.Current) * p.Units
 }
 
 // PortfolioStats holds the portfolio performance metrics
@@ -52,9 +51,10 @@ type PortfolioStats struct {
 
 // PortfolioManager handles position tracking and P&L calculations
 type PortfolioManager struct {
-	Balance   float64              // Current balance
-	Positions map[string]*Position // Open positions by symbol
-	Stats     *PortfolioStats      // Trading statistics
+	Balance      float64              // Current balance
+	Positions    map[string]*Position // Open positions by symbol
+	Stats        *PortfolioStats      // Trading statistics
+	RiskPerTrade float64              // Risk per trade as percentage of balance (e.g., 0.02 for 2%)
 	sync.RWMutex
 }
 
@@ -62,8 +62,9 @@ type PortfolioManager struct {
 func NewPortfolioManager() *PortfolioManager {
 	initialBalance := 10000.0
 	return &PortfolioManager{
-		Balance:   initialBalance,
-		Positions: make(map[string]*Position),
+		Balance:      initialBalance,
+		Positions:    make(map[string]*Position),
+		RiskPerTrade: 0.02, // 2% risk per trade
 		Stats: &PortfolioStats{
 			InitialBalance: initialBalance,
 			CurrentBalance: initialBalance,
@@ -95,17 +96,14 @@ func (pm *PortfolioManager) ClosePosition(position *Position, closePrice float64
 	// Return position size to balance
 	pm.Balance += position.Size
 
-	// Calculate P&L
+	// Calculate P&L based on actual units and price difference
 	var pnl float64
-	// Scale factor is position size relative to initial balance (10000)
-	scaleFactor := position.Size / 10000.0
-
 	if position.Side {
-		// Long position: profit = (close - entry)
-		pnl = (closePrice - position.EntryPrice) * scaleFactor
+		// Long position: profit = (close - entry) * units
+		pnl = (closePrice - position.EntryPrice) * position.Units
 	} else {
-		// Short position: profit = (entry - close)
-		pnl = (position.EntryPrice - closePrice) * scaleFactor
+		// Short position: profit = (entry - close) * units
+		pnl = (position.EntryPrice - closePrice) * position.Units
 	}
 
 	// Add PnL to balance

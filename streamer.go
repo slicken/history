@@ -28,26 +28,6 @@ func (bars Bars) Stream() <-chan Bar {
 	return c
 }
 
-// StreamDuration bars
-func (bars Bars) StreamDuration(duration time.Duration) <-chan Bar {
-	c := make(chan Bar, 1)
-
-	if len(bars) == 0 {
-		defer close(c)
-		return c
-	}
-
-	go func() {
-		for i := len(bars) - 1; i >= 0; i-- {
-			time.Sleep(duration)
-			c <- bars[i]
-		}
-		close(c)
-	}()
-
-	return c
-}
-
 // Stream Interval
 func (bars Bars) StreamInterval(start, end time.Time, interval time.Duration) <-chan Bar {
 	c := make(chan Bar, 1)

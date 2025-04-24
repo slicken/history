@@ -1,5 +1,7 @@
 package main
 
+// fix .. drawdown is correct? 20% all time?
+
 import (
 	"flag"
 	"fmt"

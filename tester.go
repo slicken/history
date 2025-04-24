@@ -72,27 +72,17 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 			continue
 		}
 
-		// Get the bar period for streaming interval
-		period := bars.Period()
+		var currentBars Bars
 
 		// Create a channel to receive bars using StreamInterval
-		barChan := bars.StreamInterval(start, end, period) // Use StreamInterval
-
-		// Process bars as they arrive
-		var currentBars Bars
-		for bar := range barChan {
+		for bar := range bars.StreamInterval(start, end, bars.Period()) {
 			// Skip empty bars
 			if bar.Time.IsZero() {
 				continue
 			}
 
-			// Add the new bar to our current bars
-			currentBars = append(currentBars, bar)
-
-			// Reverse the currentBars slice so newest is first
-			for i, j := 0, len(currentBars)-1; i < j; i, j = i+1, j-1 {
-				currentBars[i], currentBars[j] = currentBars[j], currentBars[i]
-			}
+			// Prepend the new bar to our current bars
+			currentBars = append(Bars{bar}, currentBars...)
 
 			// Update portfolio positions with current price if portfolio exists
 			if hasPortfolio && portfolio != nil {
@@ -118,23 +108,18 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 		Events: t.events,
 	}
 
+	log.Printf("[TEST] completed with %d Events\n", len(*t.events))
+
 	// Add portfolio stats if available
 	if hasPortfolio && portfolio != nil {
 		stats := portfolio.GetStats()
 		result.PortfolioStats = &stats
 
-		log.Printf("[PORTFOLIO] Final Balance: %.2f (%+.2f%%)\n",
-			result.PortfolioStats.CurrentBalance,
-			(result.PortfolioStats.CurrentBalance-result.PortfolioStats.InitialBalance)/result.PortfolioStats.InitialBalance*100)
-		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d trades)\n",
-			result.PortfolioStats.WinRate*100,
-			result.PortfolioStats.WinningTrades,
-			result.PortfolioStats.TotalTrades)
-		log.Printf("[PORTFOLIO] Max Drawdown: %.2f%%\n",
-			result.PortfolioStats.MaxDrawdown*100)
+		log.Printf("[PORTFOLIO] Final Balance: %.2f (%+.2f%%)\n", result.PortfolioStats.CurrentBalance, (result.PortfolioStats.CurrentBalance-result.PortfolioStats.InitialBalance)/result.PortfolioStats.InitialBalance*100)
+		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d trades)\n", result.PortfolioStats.WinRate*100, result.PortfolioStats.WinningTrades, result.PortfolioStats.TotalTrades)
+		log.Printf("[PORTFOLIO] Max Drawdown: %.2f%%\n", result.PortfolioStats.MaxDrawdown*100)
 	}
 
-	log.Printf("[TEST] completed with %d Events\n", len(*t.events))
 	return result, nil
 }
 
