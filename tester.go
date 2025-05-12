@@ -108,7 +108,11 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 		Events: t.events,
 	}
 
-	log.Printf("[TEST] completed with %d Events\n", len(*t.events))
+	if hasPortfolio && portfolio != nil {
+		log.Printf("[TEST] completed with %d Events (%d Trades)\n", len(*t.events), portfolio.Stats.TotalTrades)
+	} else {
+		log.Printf("[TEST] completed with %d Events\n", len(*t.events))
+	}
 
 	// Add portfolio stats if available
 	if hasPortfolio && portfolio != nil {
@@ -116,7 +120,7 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 		result.PortfolioStats = &stats
 
 		log.Printf("[PORTFOLIO] Final Balance: %.2f (%+.2f%%)\n", result.PortfolioStats.CurrentBalance, (result.PortfolioStats.CurrentBalance-result.PortfolioStats.InitialBalance)/result.PortfolioStats.InitialBalance*100)
-		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d trades)\n", result.PortfolioStats.WinRate*100, result.PortfolioStats.WinningTrades, result.PortfolioStats.TotalTrades)
+		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d)\n", result.PortfolioStats.WinRate*100, result.PortfolioStats.WinningTrades, result.PortfolioStats.LosingTrades)
 		log.Printf("[PORTFOLIO] Max Drawdown: %.2f%%\n", result.PortfolioStats.MaxDrawdown*100)
 	}
 

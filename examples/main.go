@@ -1,7 +1,5 @@
 package main
 
-// fix .. drawdown is correct? 20% all time?
-
 import (
 	"flag"
 	"fmt"
@@ -20,7 +18,7 @@ var (
 	hist         = new(history.History)      // main struct to control bars data
 	events       = new(history.Events)       // we store our events here, if we want to save them
 	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
-	strategy     = NewEngulfing()            // lstn predicto strategy
+	strategy     = NewPercScalper()          // percentage scalper strategy
 	chart        = charts.NewHighChart()
 
 	config  = new(Config) // store argument configurations for example app
@@ -178,7 +176,7 @@ func httpPlot(w http.ResponseWriter, r *http.Request) {
 // httpStrategyTest runs backtest with portfolio tracking and prints performance
 func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
-	strategy := NewEngulfing()
+	strategy := NewPercScalper()
 
 	// limit bars
 	if config.limit > 0 {
@@ -275,7 +273,7 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() > SMA {
 
-		return s.BuyEvent(2000, bars[0].C()), true
+		return s.BuyEvent(s.GetPortfolioManager().GetStats().CurrentBalance*0.20, bars[0].Close), true
 	}
 
 	// MARKET_SELL signal
@@ -286,7 +284,7 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() < SMA {
 
-		return s.SellEvent(2000, bars[0].C()), true
+		return s.SellEvent(s.GetPortfolioManager().Balance*0.20, bars[0].C()), true
 	}
 
 	return history.Event{}, false
@@ -295,4 +293,115 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 // Name returns the strategy name
 func (s *Engulfing) Name() string {
 	return "Engulfing"
+}
+
+// PercScalper strategy
+type PercScalper struct {
+	history.BaseStrategy
+	buy_perc    float64 // Buy on perc dips
+	sell_perc   float64 // Sell on perc spikes
+	trail_start float64 // Trail start percentage
+	nClose      int     // Close after N bars
+	maxPos      int     // Max positions
+	climaxHi    float64 // Climax distance ma R
+	climaxMove  float64 // Climax 3day move perc
+	entry_price float64 // Entry price for current position
+}
+
+func NewPercScalper() *PercScalper {
+	return &PercScalper{
+		BaseStrategy: *history.NewBaseStrategy("PercScalper"),
+		buy_perc:     2.5, // Buy on perc dips
+		sell_perc:    0.0, // Sell on perc spikes
+		trail_start:  0.2, // trail start (0=off)
+		nClose:       0,   // close pos after N bars'
+		maxPos:       1,   // max positions
+		climaxHi:     2.8, // climax distance ma R (0=off)
+		climaxMove:   0.0, // climax 3day move perc (0=off
+	}
+}
+
+// Event PercScalper
+func (s *PercScalper) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+	if len(bars) < 20 {
+		return history.Event{}, false
+	}
+
+	// Get current position
+	portfolio := s.GetPortfolioManager()
+	position, hasPosition := portfolio.Positions[symbol]
+
+	// Calculate indicators
+	ema10 := bars[0:10].EMA(history.C)
+	atr := bars[0:14].ATR()
+
+	// Calculate price movements
+	price_dip := (bars[0].Open - bars[0].Close) / bars[0].Open * 100
+	price_spike := 0.0
+	if s.entry_price > 0 {
+		price_spike = (bars[0].Close - s.entry_price) / s.entry_price * 100
+	}
+
+	// Define conditions
+	buy_condition := price_dip >= s.buy_perc
+	sell_condition := s.sell_perc > 0 && price_spike >= s.sell_perc
+
+	// Close after N bars
+	if s.nClose > 0 && hasPosition {
+		entryBar := position.EntryTime
+		barCount := 0
+		for _, bar := range bars {
+			if bar.Time.After(entryBar) {
+				barCount++
+			}
+		}
+		if barCount >= s.nClose {
+			s.entry_price = 0
+			return s.Close(), true
+		}
+	}
+
+	// Buy logic
+	if buy_condition && !hasPosition && len(portfolio.Positions) < s.maxPos {
+		s.entry_price = bars[0].Close
+		// return s.BuyEvent(1000, bars[0].Close), true
+		return s.BuyEvent(portfolio.Balance*0.20, bars[0].Close), true
+	}
+
+	// Sell logic
+	if sell_condition && hasPosition {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Trailing stop
+	trailLong := hasPosition && bars[0].Close >= position.EntryPrice*(1+s.trail_start/100)
+	trailFilter := bars[0].Open > ema10 && bars[0].Close < ema10
+	if s.trail_start > 0 && trailLong && trailFilter {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Climax high
+	climaxHigh := bars[0].Close > ema10+s.climaxHi*atr
+	if s.climaxHi > 0 && climaxHigh && hasPosition {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Climax move
+	if s.climaxMove > 0 && len(bars) >= 3 {
+		climaxMoveUp := (bars[0].Close/bars[3].Close-1)*100 > s.climaxMove
+		if climaxMoveUp && hasPosition {
+			s.entry_price = 0
+			return s.Close(), true
+		}
+	}
+
+	return history.Event{}, false
+}
+
+// Name returns the strategy name
+func (s *PercScalper) Name() string {
+	return "PercScalper"
 }

@@ -51,10 +51,9 @@ type PortfolioStats struct {
 
 // PortfolioManager handles position tracking and P&L calculations
 type PortfolioManager struct {
-	Balance      float64              // Current balance
-	Positions    map[string]*Position // Open positions by symbol
-	Stats        *PortfolioStats      // Trading statistics
-	RiskPerTrade float64              // Risk per trade as percentage of balance (e.g., 0.02 for 2%)
+	Balance   float64              // Current balance
+	Positions map[string]*Position // Open positions by symbol
+	Stats     *PortfolioStats      // Trading statistics
 	sync.RWMutex
 }
 
@@ -62,9 +61,8 @@ type PortfolioManager struct {
 func NewPortfolioManager() *PortfolioManager {
 	initialBalance := 10000.0
 	return &PortfolioManager{
-		Balance:      initialBalance,
-		Positions:    make(map[string]*Position),
-		RiskPerTrade: 0.02, // 2% risk per trade
+		Balance:   initialBalance,
+		Positions: make(map[string]*Position),
 		Stats: &PortfolioStats{
 			InitialBalance: initialBalance,
 			CurrentBalance: initialBalance,

@@ -2,7 +2,6 @@ package history
 
 import (
 	"fmt"
-	"math"
 	"time"
 )
 
@@ -56,7 +55,7 @@ func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 		Type:   MARKET_BUY,
 		Time:   s.time,
 		Price:  price,
-		Size:   riskAmount, // This is now the USD value we want to risk
+		Size:   riskAmount,
 		Text:   "Buy",
 	}
 
@@ -65,8 +64,8 @@ func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 		s.portfolio.Lock()
 		defer s.portfolio.Unlock()
 
-		// Calculate position size based on available balance and risk
-		positionSize := math.Min(riskAmount, s.portfolio.Balance*s.portfolio.RiskPerTrade)
+		// Calculate position size based on available balance
+		positionSize := riskAmount
 		units := positionSize / price // Calculate actual units to buy
 
 		// Open long position if we have enough balance
@@ -101,7 +100,7 @@ func (s *BaseStrategy) SellEvent(riskAmount float64, price float64) Event {
 		Type:   MARKET_SELL,
 		Time:   s.time,
 		Price:  price,
-		Size:   riskAmount, // This is now the USD value we want to risk
+		Size:   riskAmount,
 		Text:   "Sell",
 	}
 
@@ -110,8 +109,8 @@ func (s *BaseStrategy) SellEvent(riskAmount float64, price float64) Event {
 		s.portfolio.Lock()
 		defer s.portfolio.Unlock()
 
-		// Calculate position size based on available balance and risk
-		positionSize := math.Min(riskAmount, s.portfolio.Balance*s.portfolio.RiskPerTrade)
+		// Calculate position size based on available balance
+		positionSize := riskAmount
 		units := positionSize / price // Calculate actual units to sell
 
 		// Open short position if we have enough balance
@@ -153,7 +152,7 @@ func (s *BaseStrategy) Close() Event {
 		Price:  s.price,
 		Size:   0,
 		Text:   "No Position to Close",
-	}
+	} //
 }
 
 // CloseEvent creates a close position event for a given opening event and closing price
