@@ -8,17 +8,18 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/slicken/history"
 	"github.com/slicken/history/charts"
 )
 
 var (
-	hist = new(history.History) // main struct to control bars data
-	// events       = new(history.Events)       // we store our events here, if we want to save them
+	hist         = new(history.History)      // main struct to control bars data
+	events       = new(history.Events)       // we store our events here, if we want to save them
 	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
-	// strategy     = NewPercScalper()          // percentage scalper strategy
-	chart charts.ChartBuilder
+	strategy     = NewPercScalper()          // percentage scalper strategy
+	chart        = charts.NewHighChart()
 
 	config  = new(Config) // store argument configurations for example app
 	symbols []string      // list of symbols to handle bars
@@ -34,7 +35,6 @@ type Config struct {
 	update bool
 	limit  int
 	// chart settings
-	chart string
 	ctype string
 	// temp
 	saveAI_data bool
@@ -54,7 +54,6 @@ func main() {
 	flag.StringVar(&config.quote, "quote", "USDT", "build pairs from quote")
 	flag.BoolVar(&config.update, "update", false, "update bars")
 	flag.IntVar(&config.limit, "limit", 300, "limit bars (0=off)")
-	flag.StringVar(&config.chart, "chart", "highcharts", "chart library: highcharts|tradingview")
 	flag.StringVar(&config.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
 	flag.StringVar(&config.symbol, "symbol", "", "singlle symboltf")
 	flag.BoolVar(&config.saveAI_data, "saveAI_data", false, "save dataset for predictor")
@@ -67,7 +66,6 @@ Options:
   -quote string               Build pairs from quote (default 'USDT')
   -update bool                Update bars (default false)
   -limit int                  Limit bars (0=off) (default 300)
-  -chart string               Chart library: highcharts|tradingview (default 'highcharts')
   -ctype string               Chart type: candlestick|ohlc|line|spline (default 'candlestick')
   -symbol string              Single symboltf. e.g., 'BTCUSDT1d'
   -saveAI_data bool           Save dataset fir LSTM predictor strategy (default false)
@@ -83,27 +81,24 @@ Options:
 	}
 
 	// ----------------------------------------------------------------------------------------------
-	// Initialize history with database
-	// ----------------------------------------------------------------------------------------------
-	var err error
-	hist, err = history.New()
-	if err != nil {
-		log.Fatal("could not create history:", err)
-	}
-	// ----------------------------------------------------------------------------------------------
 	// create list of symbols form data grabbet from my exchanges
 	// ----------------------------------------------------------------------------------------------
+	var err error
 	symbols = []string{config.symbol}
 	if config.symbol == "" {
 		symbols, err = MakeSymbolMultiTimeframe(config.quote, config.tf)
 		if err != nil {
-			symbols, err = hist.StoredSymbols(config.tf)
-			if err != nil {
-				log.Printf("Error getting stored symbols: %v", err)
-			}
+			log.Fatal("could not make symbols:", err)
 		}
 	}
 	log.Printf("initalizing %d symbols...\n", len(symbols))
+	// ----------------------------------------------------------------------------------------------
+	// Initialize history with database
+	// ----------------------------------------------------------------------------------------------
+	hist, err = history.New()
+	if err != nil {
+		log.Fatal("could not create history:", err)
+	}
 	// ----------------------------------------------------------------------------------------------
 	// add a downloader to the interface.
 	// ----------------------------------------------------------------------------------------------
@@ -136,21 +131,22 @@ Options:
 	// 	log.Fatal("could not start event handler:", err)
 	// }
 	// ----------------------------------------------------------------------------------------------
-	// chart (highcharts or tradingview)
+	// highchart
 	// ----------------------------------------------------------------------------------------------
-	switch config.chart {
-	case "tradingview":
-		tv := charts.NewTradingView()
-		tv.SMA = []int{20, 200}
-		chart = tv
-	default:
-		hc := charts.NewHighChart()
-		hc.SMA = []int{20, 200}
-		chart = hc
-	}
+	// chart.Type = charts.ChartType(charts.Spline)
+	// chart.SMA = []int{20, 200}
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
+
+	if config.saveAI_data {
+		time.Sleep(10 * time.Second)
+
+		log.Println("saving AI data...")
+		for _, symbol := range symbols {
+			saveAI_Data(hist, symbol)
+		}
+	}
 
 	log.Println("starting web server...")
 	http.HandleFunc("/", httpPlot)
@@ -180,7 +176,7 @@ func httpPlot(w http.ResponseWriter, r *http.Request) {
 // httpStrategyTest runs backtest with portfolio tracking and prints performance
 func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
-	strategy := NewEngulfing()
+	strategy := NewPercScalper()
 
 	// limit bars
 	if config.limit > 0 {
@@ -237,4 +233,175 @@ func httpPredictor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(c)
+}
+
+// ----------------------------------------------------------------------------------------------
+// S T R A T E G I E S
+// ----------------------------------------------------------------------------------------------
+
+// Engulfing test strategy
+type Engulfing struct {
+	history.BaseStrategy
+}
+
+func NewEngulfing() *Engulfing {
+	return &Engulfing{
+		BaseStrategy: *history.NewBaseStrategy("Engulfing"),
+	}
+}
+
+// Event EngulfingN..
+func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+	if len(bars) < 20 {
+		return history.Event{}, false
+	}
+
+	// close position on next bar
+	if _, exists := s.GetPortfolioManager().Positions[symbol]; exists {
+		return s.Close(), true
+	}
+
+	SMA := bars[0:20].SMA(history.C)
+	ATR := bars[1:4].ATR()
+
+	// MARKET_BUY signal
+	if bars.LastBearIdx() < 5 &&
+		bars[0].C()-SMA < 2*ATR &&
+		bars[0].C() > bars[bars.LastBearIdx()].H() &&
+		bars[0].O() < bars[bars.LastBearIdx()].H() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() > SMA {
+
+		return s.BuyEvent(s.GetPortfolioManager().GetStats().CurrentBalance*0.20, bars[0].Close), true
+	}
+
+	// MARKET_SELL signal
+	if bars.LastBullIdx() < 5 &&
+		bars[0].O() > bars[bars.LastBullIdx()].L() &&
+		bars[0].C() < bars[bars.LastBullIdx()].L() &&
+		bars[0].Body() > ATR &&
+		bars[0].O()-SMA < 2*ATR &&
+		bars[0].C() < SMA {
+
+		return s.SellEvent(s.GetPortfolioManager().Balance*0.20, bars[0].C()), true
+	}
+
+	return history.Event{}, false
+}
+
+// Name returns the strategy name
+func (s *Engulfing) Name() string {
+	return "Engulfing"
+}
+
+// PercScalper strategy
+type PercScalper struct {
+	history.BaseStrategy
+	buy_perc    float64 // Buy on perc dips
+	sell_perc   float64 // Sell on perc spikes
+	trail_start float64 // Trail start percentage
+	nClose      int     // Close after N bars
+	maxPos      int     // Max positions
+	climaxHi    float64 // Climax distance ma R
+	climaxMove  float64 // Climax 3day move perc
+	entry_price float64 // Entry price for current position
+}
+
+func NewPercScalper() *PercScalper {
+	return &PercScalper{
+		BaseStrategy: *history.NewBaseStrategy("PercScalper"),
+		buy_perc:     2.5, // Buy on perc dips
+		sell_perc:    0.0, // Sell on perc spikes
+		trail_start:  0.2, // trail start (0=off)
+		nClose:       0,   // close pos after N bars'
+		maxPos:       1,   // max positions
+		climaxHi:     2.8, // climax distance ma R (0=off)
+		climaxMove:   0.0, // climax 3day move perc (0=off
+	}
+}
+
+// Event PercScalper
+func (s *PercScalper) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+	if len(bars) < 20 {
+		return history.Event{}, false
+	}
+
+	// Get current position
+	portfolio := s.GetPortfolioManager()
+	position, hasPosition := portfolio.Positions[symbol]
+
+	// Calculate indicators
+	ema10 := bars[0:10].EMA(history.C)
+	atr := bars[0:14].ATR()
+
+	// Calculate price movements
+	price_dip := (bars[0].Open - bars[0].Close) / bars[0].Open * 100
+	price_spike := 0.0
+	if s.entry_price > 0 {
+		price_spike = (bars[0].Close - s.entry_price) / s.entry_price * 100
+	}
+
+	// Define conditions
+	buy_condition := price_dip >= s.buy_perc
+	sell_condition := s.sell_perc > 0 && price_spike >= s.sell_perc
+
+	// Close after N bars
+	if s.nClose > 0 && hasPosition {
+		entryBar := position.EntryTime
+		barCount := 0
+		for _, bar := range bars {
+			if bar.Time.After(entryBar) {
+				barCount++
+			}
+		}
+		if barCount >= s.nClose {
+			s.entry_price = 0
+			return s.Close(), true
+		}
+	}
+
+	// Buy logic
+	if buy_condition && !hasPosition && len(portfolio.Positions) < s.maxPos {
+		s.entry_price = bars[0].Close
+		// return s.BuyEvent(1000, bars[0].Close), true
+		return s.BuyEvent(portfolio.Balance*0.20, bars[0].Close), true
+	}
+
+	// Sell logic
+	if sell_condition && hasPosition {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Trailing stop
+	trailLong := hasPosition && bars[0].Close >= position.EntryPrice*(1+s.trail_start/100)
+	trailFilter := bars[0].Open > ema10 && bars[0].Close < ema10
+	if s.trail_start > 0 && trailLong && trailFilter {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Climax high
+	climaxHigh := bars[0].Close > ema10+s.climaxHi*atr
+	if s.climaxHi > 0 && climaxHigh && hasPosition {
+		s.entry_price = 0
+		return s.Close(), true
+	}
+
+	// Climax move
+	if s.climaxMove > 0 && len(bars) >= 3 {
+		climaxMoveUp := (bars[0].Close/bars[3].Close-1)*100 > s.climaxMove
+		if climaxMoveUp && hasPosition {
+			s.entry_price = 0
+			return s.Close(), true
+		}
+	}
+
+	return history.Event{}, false
+}
+
+// Name returns the strategy name
+func (s *PercScalper) Name() string {
+	return "PercScalper"
 }

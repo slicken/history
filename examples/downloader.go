@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -71,6 +72,8 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 					}
 				}
 			}
+			fmt.Printf(pair, timeframe)
+			fmt.Printf("%s\n", string(body))
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
@@ -157,8 +160,8 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string, error) {
 	// run func
 	ei, err := GetExchangeInfo()
-	if err != nil {
-		return nil, err
+	if err != nil || ei.Symbols == nil {
+		return nil, errors.New("empty")
 	}
 
 	// make pair slice
@@ -187,6 +190,7 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 			result = append(result, pair.Symbol+tf)
 		}
 	}
+
 	return result, nil
 }
 

@@ -50,8 +50,8 @@ func NewHighChart() *HighChart {
 		Type:      Candlestick,
 		Volume:    true,
 		Shadow:    false,
-		SetWidth:  "56%",
-		SetHeight: "72%",
+		SetWidth:  "90vw",
+		SetHeight: "72vh",
 		SetMargin: "25px",
 	}
 }
@@ -116,21 +116,24 @@ func MakeEventFlags(events history.Events) ([]string, []string, []string, []stri
 
 // MakeHeader creates chart headers
 func (c *HighChart) MakeHeader() ([]byte, error) {
-	// <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-	return []byte(`
-	<head>
+	// Pin to 12.1.2+ to avoid "Highcharts is not defined" when loading from head (v12.1.1 accessed document.body before it existed)
+	return []byte(`<!DOCTYPE html>
+<html>
+<head>
+		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width"/>
-		<script src="https://code.highcharts.com/stock/highstock.js"></script>
-		<script src="https://code.highcharts.com/modules/data.js"></script>
-		<script src="https://code.highcharts.com/stock/indicators/indicators.js"></script>
-		<script src="https://code.highcharts.com/stock/indicators/ema.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/highcharts@10.3.3/highstock.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/highcharts@10.3.3/modules/data.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/highcharts@10.3.3/indicators/indicators.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/highcharts@10.3.3/indicators/ema.js"></script>
 	</head>
+	<body>
 	<style>
-		html{font-family: 'Lato',sans-serif;}
+		html{font-family: 'Lato',sans-serif; height: 100%;}
 		body{
 			overflow: auto;
 			background: whitesmoke;
-	
+			min-height: 100%;
 			display: flex;
 			flex-direction: column;
 			align-items: center;
@@ -138,6 +141,8 @@ func (c *HighChart) MakeHeader() ([]byte, error) {
 		.charts {
 			width: ` + c.SetWidth + `;
 			height: ` + c.SetHeight + `;
+			min-width: 320px;
+			min-height: 280px;
 			margin: ` + c.SetMargin + `;
 		}
 	 </style>`), nil
@@ -160,14 +165,20 @@ func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Eve
 	return []byte(`
 	<div class="charts" id="` + name + `"></div>
 	<script>
-
-	Highcharts.setOptions({
-		lang: {
-			rangeSelectorZoom: ''
-		}
-	});
-
-	Highcharts.stockChart('` + name + `', {
+	(function(){
+		var id = '` + name + `';
+		function init(retries) {
+			retries = retries || 0;
+			var el = document.getElementById(id);
+			if (!el || el.offsetWidth <= 0 || el.offsetHeight <= 0) {
+				if (retries < 60) requestAnimationFrame(function() { init(retries + 1); });
+				return;
+			}
+			Highcharts.setOptions({
+				accessibility: { enabled: false },
+				lang: { rangeSelectorZoom: '' }
+			});
+			Highcharts.stockChart(id, {
 		credits: false,
 
 		title: {
@@ -389,7 +400,14 @@ func (c *HighChart) MakeChart(name string, bars history.Bars, events history.Eve
 		}() +
 
 		`}]
-	});
+			});
+		}
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', function() { requestAnimationFrame(init); });
+		} else {
+			requestAnimationFrame(init);
+		}
+	})();
 	</script>`), nil
 }
 
@@ -450,5 +468,6 @@ func (c *HighChart) BuildCharts(m map[string]history.Bars, events map[string]his
 		}
 	}
 
-	return buf, err
+	buf = append(buf, []byte("\n</body>\n</html>")...)
+	return buf, nil
 }

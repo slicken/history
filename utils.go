@@ -1,6 +1,7 @@
 package history
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -22,14 +23,25 @@ func (h *History) SetMaxLimit(v int) {
 }
 
 // StoredSymbols returns all unique symbols from the database
-func (h *History) StoredSymbols() ([]string, error) {
-	rows, err := h.db.Query(`
-		SELECT DISTINCT symbol 
-		FROM bars 
-		ORDER BY symbol ASC
-	`)
+// If tf is empty, returns all symbols, otherwise returns only symbols with the specified timeframe
+func (h *History) StoredSymbols(tf string) ([]string, error) {
+	if h.db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if tf == "" {
+		rows, err = h.db.Query("SELECT DISTINCT symbol FROM bars")
+	} else {
+		rows, err = h.db.Query("SELECT DISTINCT symbol FROM bars WHERE symbol LIKE '%' || ? ", tf)
+	}
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -37,13 +49,13 @@ func (h *History) StoredSymbols() ([]string, error) {
 	for rows.Next() {
 		var symbol string
 		if err := rows.Scan(&symbol); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan failed: %w", err)
 		}
 		symbols = append(symbols, symbol)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	return symbols, nil

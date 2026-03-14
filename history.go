@@ -145,6 +145,7 @@ func (h *History) Limit(length int) *History {
 	h.Lock()
 	defer h.Unlock()
 
+	maxlimit = length
 	for symbol := range h.bars {
 		if length >= len(h.bars[symbol]) {
 			continue
@@ -341,8 +342,8 @@ func (h *History) Update(enabled bool) {
 	}
 }
 
-// ReprocessHistory downloads and overwrites bars for all loaded symbols with specified limit
-func (h *History) ReprocessHistory(limit int) error {
+// Reprocess downloads and overwrites bars for all loaded symbols with specified limit
+func (h *History) Reprocess(limit int) error {
 	log.Printf("reprocessing %d bars\n", limit)
 
 	h.RLock()
