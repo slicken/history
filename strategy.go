@@ -7,7 +7,8 @@ import (
 
 // Strategy interface defines the minimum requirements for implementing a trading strategy
 type Strategy interface {
-	// OnBar is called for each symbol and its bars, returns an event if strategy conditions are met
+	// OnBar is main function that computes strategy for each bar and returns events
+	// called for each barsymbol and its bars, returns an event if strategy conditions are met
 	OnBar(symbol string, bars Bars) (Event, bool)
 	// Name returns the strategy name, used for identifying events
 	Name() string
@@ -42,11 +43,6 @@ func (s *BaseStrategy) SetContext(symbol string, bar Bar) {
 	s.price = bar.Close
 }
 
-// Buy creates a buy event with default size of 1000 and current price
-func (s *BaseStrategy) Buy() Event {
-	return s.BuyEvent(1000, s.price)
-}
-
 // BuyEvent creates a buy event with specified size and price
 func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 	event := Event{
@@ -71,7 +67,7 @@ func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 		// Open long position if we have enough balance
 		if s.portfolio.Balance >= positionSize {
 			s.portfolio.Balance -= positionSize // Deduct the position size from balance
-			s.portfolio.Positions[s.symbol] = &Position{
+			pos := &Position{
 				Symbol:     s.symbol,
 				Side:       true, // long
 				EntryTime:  s.time,
@@ -81,15 +77,11 @@ func (s *BaseStrategy) BuyEvent(riskAmount float64, price float64) Event {
 				Current:    price,
 				OpenEvent:  event,
 			}
+			s.portfolio.Positions[s.symbol] = append(s.portfolio.Positions[s.symbol], pos)
 		}
 	}
 
 	return event
-}
-
-// Sell creates a sell event with default size of 1000 and current price
-func (s *BaseStrategy) Sell() Event {
-	return s.SellEvent(1000, s.price)
 }
 
 // SellEvent creates a sell event with specified size and price
@@ -116,7 +108,7 @@ func (s *BaseStrategy) SellEvent(riskAmount float64, price float64) Event {
 		// Open short position if we have enough balance
 		if s.portfolio.Balance >= positionSize {
 			s.portfolio.Balance -= positionSize // Deduct the position size from balance
-			s.portfolio.Positions[s.symbol] = &Position{
+			pos := &Position{
 				Symbol:     s.symbol,
 				Side:       false, // short
 				EntryTime:  s.time,
@@ -126,33 +118,11 @@ func (s *BaseStrategy) SellEvent(riskAmount float64, price float64) Event {
 				Current:    price,
 				OpenEvent:  event,
 			}
+			s.portfolio.Positions[s.symbol] = append(s.portfolio.Positions[s.symbol], pos)
 		}
 	}
 
 	return event
-}
-
-// Close is a helper that finds the latest position and its opening event, then closes it at current price
-func (s *BaseStrategy) Close() Event {
-	if s.portfolio != nil {
-		s.portfolio.Lock()
-		defer s.portfolio.Unlock()
-
-		if pos, exists := s.portfolio.Positions[s.symbol]; exists {
-			return s.CloseEvent(pos.OpenEvent, s.price)
-		}
-	}
-
-	// If no position found, return empty event
-	return Event{
-		Symbol: s.symbol,
-		Name:   s.name,
-		Type:   OTHER,
-		Time:   s.time,
-		Price:  s.price,
-		Size:   0,
-		Text:   "No Position to Close",
-	} //
 }
 
 // CloseEvent creates a close position event for a given opening event and closing price
@@ -179,12 +149,14 @@ func (s *BaseStrategy) CloseEvent(openEvent Event, closePrice float64) Event {
 		positionType = "Short"
 	}
 
-	// Calculate P&L before closing
+	// Calculate P&L and close position (ClosePosition updates Balance internally)
 	pnl := 0.0
 	if s.portfolio != nil {
-		if pos, exists := s.portfolio.Positions[openEvent.Symbol]; exists {
-			pnl = s.portfolio.ClosePosition(pos, closePrice)
-			s.portfolio.Balance += pnl
+		for _, pos := range s.portfolio.Positions[openEvent.Symbol] {
+			if pos.OpenEvent.Time.Equal(openEvent.Time) && pos.OpenEvent.Price == openEvent.Price {
+				pnl = s.portfolio.ClosePosition(pos, closePrice, s.time)
+				break
+			}
 		}
 	}
 
@@ -199,6 +171,43 @@ func (s *BaseStrategy) CloseEvent(openEvent Event, closePrice float64) Event {
 	}
 
 	return event
+}
+
+// Buy creates a buy event with default size of 1000 and current price
+func (s *BaseStrategy) Buy() Event {
+	return s.BuyEvent(1000, s.price)
+}
+
+// Sell creates a sell event with default size of 1000 and current price
+func (s *BaseStrategy) Sell() Event {
+	return s.SellEvent(1000, s.price)
+}
+
+// Close is a helper that finds the oldest position for the symbol and closes it at current price
+func (s *BaseStrategy) Close() Event {
+	if s.portfolio != nil {
+		var openEvent Event
+		s.portfolio.Lock()
+		positions := s.portfolio.Positions[s.symbol]
+		if len(positions) > 0 {
+			openEvent = positions[0].OpenEvent
+		}
+		s.portfolio.Unlock()
+		if len(positions) > 0 {
+			return s.CloseEvent(openEvent, s.price)
+		}
+	}
+
+	// If no position found, return empty event
+	return Event{
+		Symbol: s.symbol,
+		Name:   s.name,
+		Type:   OTHER,
+		Time:   s.time,
+		Price:  s.price,
+		Size:   0,
+		Text:   "No Position to Close",
+	} //
 }
 
 // Sit creates a neutral event when no action is taken

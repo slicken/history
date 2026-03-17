@@ -24,7 +24,9 @@ type BinanceError struct {
 	Msg  string `json:"msg"`
 }
 
-// GetKlines new data from Binance exchange
+// GetKlines fetches OHLCV data from Binance.
+// Binance API allows max 1000 bars per request; this function paginates to fetch up to `limit` bars.
+// There is no hard max—pass any limit; it will request in batches of 1000 until satisfied or no more data.
 func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, error) {
 	var allBars history.Bars
 	seenTimes := make(map[int64]bool)

@@ -51,6 +51,10 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 		portfolio = portfolioStrat.GetPortfolioManager()
 		// Double check that we actually got a portfolio manager
 		hasPortfolio = portfolio != nil
+		if hasPortfolio {
+			stats := portfolio.GetStats()
+			log.Printf("[TEST] Initial Balance: %.2f\n", stats.InitialBalance)
+		}
 	}
 
 	// Get all symbols from history
@@ -101,6 +105,20 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 					log.Printf("[TEST] could not add event: %+v\n", event)
 				}
 			}
+			// Process strategy with all bars up to this point (loop for multiple closes per bar, e.g. close_all)
+			// for {
+			// 	if event, ok := t.strategy.OnBar(symbol, currentBars); ok {
+			// 		if !t.events.Add(event) {
+			// 			log.Printf("[TEST] could not add event: %+v\n", event)
+			// 		}
+			// 		if hasPortfolio && portfolio != nil && event.Type == CLOSE {
+			// 			continue
+			// 		}
+			// 		break
+			// 	} else {
+			// 		break
+			// 	}
+			// }
 		}
 	}
 
@@ -109,9 +127,9 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 	}
 
 	if hasPortfolio && portfolio != nil {
-		log.Printf("[TEST] completed with %d Events (%d Trades)\n", len(*t.events), portfolio.Stats.TotalTrades)
+		log.Printf("[TEST] Completed with %d Events (%d Trades)\n", len(*t.events), portfolio.Stats.TotalTrades)
 	} else {
-		log.Printf("[TEST] completed with %d Events\n", len(*t.events))
+		log.Printf("[TEST] Completed with %d Events\n", len(*t.events))
 	}
 
 	// Add portfolio stats if available
@@ -119,9 +137,18 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 		stats := portfolio.GetStats()
 		result.PortfolioStats = &stats
 
-		log.Printf("[PORTFOLIO] Final Balance: %.2f (%+.2f%%)\n", result.PortfolioStats.CurrentBalance, (result.PortfolioStats.CurrentBalance-result.PortfolioStats.InitialBalance)/result.PortfolioStats.InitialBalance*100)
-		log.Printf("[PORTFOLIO] Win Rate: %.2f%% (%d/%d)\n", result.PortfolioStats.WinRate*100, result.PortfolioStats.WinningTrades, result.PortfolioStats.LosingTrades)
-		log.Printf("[PORTFOLIO] Max Drawdown: %.2f%%\n", result.PortfolioStats.MaxDrawdown*100)
+		// Final Balance = closed balance (cash only, excludes open positions)
+		closedBal := stats.Balance
+		pctChange := (closedBal - stats.InitialBalance) / stats.InitialBalance * 100
+		log.Printf("[TEST] Final Balance: %.2f (%+.2f%%)\n", closedBal, pctChange)
+
+		if stats.OpenPositionsCnt > 0 {
+			log.Printf("[TEST] %d open position(s), Unrealized P&L: %+.2f, Equity: %.2f\n",
+				stats.OpenPositionsCnt, stats.UnrealizedPnL, stats.Equity)
+		}
+
+		log.Printf("[TEST] Win Rate: %.2f%% [W:%d|L:%d]\n", result.PortfolioStats.WinRate*100, result.PortfolioStats.WinningTrades, result.PortfolioStats.LosingTrades)
+		log.Printf("[TEST] Max Drawdown: %.2f%%\n", result.PortfolioStats.MaxDrawdown*100)
 	}
 
 	return result, nil

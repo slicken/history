@@ -21,9 +21,10 @@ type EventCallback func(Event) error
 // NewEventHandler creates a new event handler
 func NewEventHandler() *EventHandler {
 	return &EventHandler{
-		handlers:   make(map[EventType][]EventCallback),
-		strategies: make([]Strategy, 0),
-		running:    false,
+		handlers:    make(map[EventType][]EventCallback),
+		strategies:  make([]Strategy, 0),
+		running:     false,
+		RWMutex:     &sync.RWMutex{},
 	}
 }
 

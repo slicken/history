@@ -344,7 +344,7 @@ func (h *History) Update(enabled bool) {
 
 // Reprocess downloads and overwrites bars for all loaded symbols with specified limit
 func (h *History) Reprocess(limit int) error {
-	log.Printf("reprocessing %d bars\n", limit)
+	log.Printf("Reprocessing (downloading) %d bars\n", limit)
 
 	h.RLock()
 	var wg sync.WaitGroup

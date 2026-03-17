@@ -143,7 +143,7 @@ func main() {
     results, _ := tester.Test(hist.FirstTime(), hist.LastTime())
     
     // Access results
-    fmt.Printf("Final Balance: %.2f\n", results.PortfolioStats.CurrentBalance)
+    fmt.Printf("Final Balance: %.2f\n", results.PortfolioStats.Balance)
     fmt.Printf("Win Rate: %.2f%%\n", results.PortfolioStats.WinRate * 100)
     fmt.Printf("Max Drawdown: %.2f%%\n", results.PortfolioStats.MaxDrawdown * 100)
 }

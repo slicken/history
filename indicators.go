@@ -32,6 +32,55 @@ func (bars Bars) LWMA(mode Price) float64 {
 	return -1.
 }
 
+// HMA returns Hull Moving Average. HMA = WMA(2*WMA(n/2) - WMA(n), sqrt(n))
+func (bars Bars) HMA(mode Price, period int) float64 {
+	half := (period + 1) / 2
+	sqrtN := int(math.Round(math.Sqrt(float64(period))))
+	if sqrtN < 1 {
+		sqrtN = 1
+	}
+	minBars := period + sqrtN - 1
+	if len(bars) < minBars {
+		return 0
+	}
+	raw := make([]float64, sqrtN)
+	for i := 0; i < sqrtN; i++ {
+		wma1 := bars[i : i+half].LWMA(mode)
+		wma2 := bars[i : i+period].LWMA(mode)
+		raw[i] = 2*wma1 - wma2
+	}
+	var sum, weight float64
+	for i := 0; i < sqrtN; i++ {
+		w := float64(sqrtN - i)
+		sum += raw[i] * w
+		weight += w
+	}
+	if weight > 0 {
+		return sum / weight
+	}
+	return 0
+}
+
+// VWMA returns Volume Weighted Moving Average: sum(close*volume, period)/sum(volume, period)
+func (bars Bars) VWMA(mode Price, period int) float64 {
+	if len(bars) < period {
+		return 0
+	}
+	var sumCV, sumV float64
+	for i := 0; i < period; i++ {
+		v := bars[i].V()
+		if v <= 0 {
+			v = 1
+		}
+		sumCV += bars[i].Mode(mode) * v
+		sumV += v
+	}
+	if sumV <= 0 {
+		return 0
+	}
+	return sumCV / sumV
+}
+
 // EMA on bars
 func (bars Bars) EMA(mode Price) float64 {
 	period := len(bars)
@@ -56,6 +105,41 @@ func (bars Bars) ATR() float64 {
 	}
 
 	return sum / float64(len(bars))
+}
+
+// ATRWilder returns Wilder's ATR (matches Pine ta.atr).
+// True Range = max(H-L, |H-prevC|, |L-prevC|). ATR = RMA of TR (SMA for first n bars).
+func (bars Bars) ATRWilder() float64 {
+	n := len(bars)
+	if n < 2 {
+		return 0
+	}
+	var sum float64
+	for i := n - 1; i >= 0; i-- {
+		hl := bars[i].High - bars[i].Low
+		if i == n-1 {
+			sum += hl
+		} else {
+			prevC := bars[i+1].Close
+			hc := bars[i].High - prevC
+			if hc < 0 {
+				hc = -hc
+			}
+			lc := bars[i].Low - prevC
+			if lc < 0 {
+				lc = -lc
+			}
+			tr := hl
+			if hc > tr {
+				tr = hc
+			}
+			if lc > tr {
+				tr = lc
+			}
+			sum += tr
+		}
+	}
+	return sum / float64(n)
 }
 
 // Standard Deviation

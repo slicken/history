@@ -48,15 +48,19 @@ func MakeOHLCTradingView(bars history.Bars) ([]byte, error) {
 
 // MakeSMATradingView computes SMA and formats for LightweightCharts line series
 // bars: index 0=newest, len-1=oldest. Output: oldest to newest
+// First SMA point is at bar (period+1) from oldest - no MA for the first period bars
 func MakeSMATradingView(bars history.Bars, period int) ([]byte, error) {
-	if period <= 0 || len(bars) < period {
+	if period <= 0 || len(bars) <= period {
 		return []byte("[]"), nil
 	}
 	count := int(math.Min(float64(len(bars)), float64(MAXLIMIT)))
-	sma := make([]map[string]interface{}, 0, count-period+1)
-	for i := count - 1; i >= period-1; i-- {
+	if count <= period {
+		return []byte("[]"), nil
+	}
+	sma := make([]map[string]interface{}, 0, count-period)
+	for i := count - period - 1; i >= 0; i-- {
 		sum := 0.0
-		for j := i - period + 1; j <= i; j++ {
+		for j := i; j <= i+period-1; j++ {
 			sum += bars[j].Close
 		}
 		sma = append(sma, map[string]interface{}{
@@ -69,20 +73,27 @@ func MakeSMATradingView(bars history.Bars, period int) ([]byte, error) {
 
 // MakeEMATradingView computes EMA and formats for LightweightCharts line series
 // bars: index 0=newest, len-1=oldest. Output: oldest to newest
+// First EMA point is at bar (period+1) from oldest - no MA for the first period bars
 func MakeEMATradingView(bars history.Bars, period int) ([]byte, error) {
-	if period <= 0 || len(bars) < period {
+	if period <= 0 || len(bars) <= period {
 		return []byte("[]"), nil
 	}
 	mult := 2.0 / float64(period+1)
 	count := int(math.Min(float64(len(bars)), float64(MAXLIMIT)))
-	ema := make([]map[string]interface{}, 0, count-period+1)
+	if count <= period {
+		return []byte("[]"), nil
+	}
+	ema := make([]map[string]interface{}, 0, count-period)
+	// Seed EMA from oldest period bars, then compute forward (toward newest)
 	sum := 0.0
 	for j := count - period; j < count; j++ {
 		sum += bars[j].Close
 	}
 	prevEMA := sum / float64(period)
-	ema = append(ema, map[string]interface{}{"time": bars[count-1].Time.Unix(), "value": prevEMA})
-	for i := count - 2; i >= period-1; i-- {
+	// First EMA point at bar count-period-1 (skip first period bars)
+	prevEMA = (bars[count-period-1].Close-prevEMA)*mult + prevEMA
+	ema = append(ema, map[string]interface{}{"time": bars[count-period-1].Time.Unix(), "value": prevEMA})
+	for i := count - period - 2; i >= 0; i-- {
 		prevEMA = (bars[i].Close-prevEMA)*mult + prevEMA
 		ema = append(ema, map[string]interface{}{"time": bars[i].Time.Unix(), "value": prevEMA})
 	}

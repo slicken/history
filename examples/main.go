@@ -14,14 +14,13 @@ import (
 )
 
 var (
-	hist = new(history.History) // main struct to control bars data
-	// events       = new(history.Events)       // we store our events here, if we want to save them
-	eventHandler = history.NewEventHandler() // event handler for managing events and strategies
-	// strategy     = NewPercScalper()          // percentage scalper strategy
-	chart charts.ChartBuilder
-
-	config  = new(Config) // store argument configurations for example app
-	symbols []string      // list of symbols to handle bars
+	strategy     = NewPercScalper()    // percentage scalper strategy
+	hist         *history.History      // main struct to control bars data
+	eventHandler *history.EventHandler // event handler for managing events and strategies
+	events       *history.Events       // we store our events here, if we want to save them
+	config       *Config               // store argument configurations for example app
+	symbols      []string              // list of symbols to handle bars
+	chart        charts.ChartBuilder
 )
 
 // Config holds app arguments
@@ -53,7 +52,7 @@ func main() {
 	flag.StringVar(&config.tf, "tf", "1d", "timeframe")
 	flag.StringVar(&config.quote, "quote", "USDT", "build pairs from quote")
 	flag.BoolVar(&config.update, "update", false, "update bars")
-	flag.IntVar(&config.limit, "limit", 300, "limit bars (0=off)")
+	flag.IntVar(&config.limit, "limit", 0, "limit bars (0=off)")
 	flag.StringVar(&config.chart, "chart", "highcharts", "chart library: highcharts|tradingview")
 	flag.StringVar(&config.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
 	flag.StringVar(&config.symbol, "symbol", "", "singlle symboltf")
@@ -119,22 +118,28 @@ Options:
 	// ----------------------------------------------------------------------------------------------
 	// limit bars
 	// ----------------------------------------------------------------------------------------------
-	hist.Limit(config.limit)
+	if config.limit > 0 {
+		hist.Limit(config.limit)
+	}
+
+	// Force re-download bars
+	// hist.Reprocess(5000)
+
 	// ----------------------------------------------------------------------------------------------
-	// Setup EventHandler and subscribe to events
+	// Setup EventHandler and subscribe any functions to Events
 	// ----------------------------------------------------------------------------------------------
-	// eventHandler.AddStrategy(strategy)
-	// eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
-	// 	log.Printf("--- Bind your function to MARKET_BUY event\n")
-	// 	return nil
-	// })
-	// eventHandler.Subscribe(history.MARKET_SELL, func(event history.Event) error {
-	// 	log.Printf("--- Bind your function to MARKET_SELL event\n")
-	// 	return nil
-	// })
-	// if err := eventHandler.Start(hist, events); err != nil {
-	// 	log.Fatal("could not start event handler:", err)
-	// }
+	eventHandler.AddStrategy(strategy)
+	eventHandler.Subscribe(history.MARKET_BUY, func(event history.Event) error {
+		log.Printf("--- Bind your function to MARKET_BUY event\n")
+		return nil
+	})
+	eventHandler.Subscribe(history.MARKET_SELL, func(event history.Event) error {
+		log.Printf("--- Bind your function to MARKET_SELL event\n")
+		return nil
+	})
+	if err := eventHandler.Start(hist, events); err != nil {
+		log.Fatal("could not start event handler:", err)
+	}
 	// ----------------------------------------------------------------------------------------------
 	// chart (highcharts or tradingview)
 	// ----------------------------------------------------------------------------------------------
@@ -155,18 +160,12 @@ Options:
 	log.Println("starting web server...")
 	http.HandleFunc("/", httpPlot)
 	http.HandleFunc("/test", httpStrategyTest)
-	http.HandleFunc("/predictor", httpPredictor)
 	http.HandleFunc("/favicon.ico", http.NotFound)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 // plot all symbol charts loaded in history
 func httpPlot(w http.ResponseWriter, r *http.Request) {
-	// limit bars
-	if config.limit > 0 {
-		hist.Limit(config.limit)
-	}
-
 	// build charts. if we pass empty events, it will only plot bars data
 	var ev history.Events
 	c, err := chart.BuildCharts(hist.Map(), ev.Map())
@@ -180,13 +179,6 @@ func httpPlot(w http.ResponseWriter, r *http.Request) {
 // httpStrategyTest runs backtest with portfolio tracking and prints performance
 func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 	// Reset the strategy to start fresh
-	strategy := NewEngulfing()
-
-	// limit bars
-	if config.limit > 0 {
-		hist.Limit(config.limit)
-	}
-
 	tester := history.NewTester(hist, strategy)
 	results, err := tester.Test(hist.FirstTime(), hist.LastTime())
 	if err != nil {
@@ -200,41 +192,5 @@ func httpStrategyTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Write(c)
-}
-
-// httpPredictor plots predicted price on chart
-func httpPredictor(w http.ResponseWriter, r *http.Request) {
-	// Reset the strategy to start fresh
-
-	strategy := NewPredictor(60, 1)
-
-	// limit bars
-	if config.limit > 0 {
-		hist.Limit(config.limit)
-	}
-
-	tester := history.NewTester(hist, strategy)
-	results, err := tester.Test(hist.FirstTime(), hist.LastTime())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// print results
-	fmt.Println("Predicted events:", strategy.num)
-	fmt.Printf("Wins: %d\n", strategy.win)
-	fmt.Printf("Loss: %d\n", strategy.loss)
-	winRatio := float64(strategy.win) / float64(strategy.num) * 100
-	lossRatio := float64(strategy.loss) / float64(strategy.num) * 100
-	fmt.Printf("Win ratio: %.2f%%\nLoss ratio: %.2f%%\n", winRatio, lossRatio)
-
-	// build charts with the events from tester
-	c, err := chart.BuildCharts(hist.Map(), results.Events.Map())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	w.Write(c)
 }
