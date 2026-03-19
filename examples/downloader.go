@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -158,30 +157,71 @@ func (e Binance) GetKlines(pair, timeframe string, limit int) (history.Bars, err
 	return allBars, nil
 }
 
-// MakeSymbolMultiTimeframe helper func for binance that makes slice of requested symbols and timeframes
-func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string, error) {
-	// run func
-	ei, err := GetExchangeInfo()
-	if err != nil || ei.Symbols == nil {
-		return nil, errors.New("empty")
+// MakeSymbolMultiTimeframe is a helper func for Binance that makes a slice of requested symbols and timeframes
+func MakeSymbolMultiTimeframe(currency string, timeframes ...string) ([]string, error) {
+	// ExchangeInfo API endpoint
+	url := "https://api.binance.com/api/v1/exchangeInfo"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Binance exchange info struct
+	var exchangeInfo struct {
+		Symbols []struct {
+			Symbol             string   `json:"symbol"`
+			Status             string   `json:"status"`
+			BaseAsset          string   `json:"baseAsset"`
+			BaseAssetPrecision int      `json:"baseAssetPrecision"`
+			QuoteAsset         string   `json:"quoteAsset"`
+			QuotePrecision     int      `json:"quotePrecision"`
+			OrderTypes         []string `json:"orderTypes"`
+			IcebergAllowed     bool     `json:"icebergAllowed"`
+			Filters            []struct {
+				FilterType  string  `json:"filterType"`
+				MinPrice    float64 `json:"minPrice,string"`
+				MaxPrice    float64 `json:"maxPrice,string"`
+				TickSize    float64 `json:"tickSize,string"`
+				MinQty      float64 `json:"minQty,string"`
+				MaxQty      float64 `json:"maxQty,string"`
+				StepSize    float64 `json:"stepSize,string"`
+				MinNotional float64 `json:"minNotional,string"`
+			} `json:"filters"`
+		} `json:"symbols"`
+	}
+
+	if err := json.Unmarshal(b, &exchangeInfo); err != nil {
+		return nil, err
 	}
 
 	// make pair slice
 	var result []string
-	for _, pair := range ei.Symbols {
-		if pair.QuoteAsset != currencie || pair.Status != "TRADING" {
+	for _, pair := range exchangeInfo.Symbols {
+		if pair.QuoteAsset != currency || pair.Status != "TRADING" {
 			continue
 		}
 
 		// exclude list
-		ok := true
+		var pass bool
 		for _, x := range []string{"DOWN", "UP", "BULL", "BEAR", "AUD", "BUSD", "BIDR", "BKRW", "DAI", "EUR", "GBP", "IDRT", "NGN", "PAX", "RUB", "TUSD", "TRY", "UAH", "USDC", "ZAR", "BUSD", "SUSD", "USDP"} {
 			if strings.Contains(pair.QuoteAsset, x) || strings.Contains(pair.BaseAsset, x) {
-				ok = false
+				pass = true
 			}
 
 		}
-		if !ok {
+		if pass {
 			continue
 		}
 
@@ -194,47 +234,4 @@ func MakeSymbolMultiTimeframe(currencie string, timeframes ...string) ([]string,
 	}
 
 	return result, nil
-}
-
-// ExchangeInfo holds the full exchange information type
-type ExchangeInfo struct {
-	Symbols []struct {
-		Symbol             string   `json:"symbol"`
-		Status             string   `json:"status"`
-		BaseAsset          string   `json:"baseAsset"`
-		BaseAssetPrecision int      `json:"baseAssetPrecision"`
-		QuoteAsset         string   `json:"quoteAsset"`
-		QuotePrecision     int      `json:"quotePrecision"`
-		OrderTypes         []string `json:"orderTypes"`
-		IcebergAllowed     bool     `json:"icebergAllowed"`
-		Filters            []struct {
-			FilterType  string  `json:"filterType"`
-			MinPrice    float64 `json:"minPrice,string"`
-			MaxPrice    float64 `json:"maxPrice,string"`
-			TickSize    float64 `json:"tickSize,string"`
-			MinQty      float64 `json:"minQty,string"`
-			MaxQty      float64 `json:"maxQty,string"`
-			StepSize    float64 `json:"stepSize,string"`
-			MinNotional float64 `json:"minNotional,string"`
-		} `json:"filters"`
-	} `json:"symbols"`
-}
-
-// func that download and return exchange info
-func GetExchangeInfo() (ExchangeInfo, error) {
-	url := "https://api.binance.com/api/v1/exchangeInfo"
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("Accept", "application/json")
-
-	ei := ExchangeInfo{}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return ei, err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-
-	json.Unmarshal(b, &ei)
-	return ei, err
 }

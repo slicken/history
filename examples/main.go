@@ -14,12 +14,12 @@ import (
 )
 
 var (
-	strategy     = NewPercScalper()    // percentage scalper strategy
-	hist         *history.History      // main struct to control bars data
-	eventHandler *history.EventHandler // event handler for managing events and strategies
-	events       *history.Events       // we store our events here, if we want to save them
-	config       *Config               // store argument configurations for example app
-	symbols      []string              // list of symbols to handle bars
+	strategy     = NewPercScalper()           // percentage scalper strategy
+	hist         *history.History           // main struct to control bars data
+	eventHandler = history.NewEventHandler() // event handler for managing strategies and events
+	events       = new(history.Events)       // collected events from the event handler
+	config       = new(Config)               // store argument configurations for example app
+	symbols      []string                   // list of symbols to handle bars
 	chart        charts.ChartBuilder
 )
 
@@ -153,6 +153,7 @@ Options:
 		hc.SMA = []int{20, 200}
 		chart = hc
 	}
+
 	// ----------------------------------------------------------------------------------------------
 	// http routes for visual results and backtesting
 	// ----------------------------------------------------------------------------------------------
