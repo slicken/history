@@ -127,9 +127,9 @@ func (t *Tester) Test(start, end time.Time) (*TestResult, error) {
 	}
 
 	if hasPortfolio && portfolio != nil {
-		log.Printf("[TEST] Completed with %d Events (%d Trades)\n", len(*t.events), portfolio.Stats.TotalTrades)
+		log.Printf("[TEST] %s completed with %d Events (%d Trades)\n", t.strategy.Name(), len(*t.events), portfolio.Stats.TotalTrades)
 	} else {
-		log.Printf("[TEST] Completed with %d Events\n", len(*t.events))
+		log.Printf("[TEST] %s completed with %d Events\n", t.strategy.Name(), len(*t.events))
 	}
 
 	// Add portfolio stats if available

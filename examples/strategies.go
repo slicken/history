@@ -74,6 +74,8 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 	SMA := bars[0:20].SMA(history.C)
 	ATR := bars[1:4].ATR()
 
+	size := portfolio.GetStats().Equity * 0.65
+
 	// MARKET_BUY signal
 	if bars.LastBearIdx() < 5 &&
 		bars[0].C()-SMA < 2*ATR &&
@@ -83,7 +85,7 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() > SMA {
 
-		return s.BuyEvent(1000, bars[0].Close), true
+		return s.BuyEvent(size, bars[0].Close), true
 	}
 
 	// MARKET_SELL signal
@@ -94,7 +96,147 @@ func (s *Engulfing) OnBar(symbol string, bars history.Bars) (history.Event, bool
 		bars[0].O()-SMA < 2*ATR &&
 		bars[0].C() < SMA {
 
-		return s.SellEvent(1000, bars[0].Close), true
+		return s.SellEvent(size, bars[0].Close), true
+	}
+
+	return history.Event{}, false
+}
+
+// Memory is a strategy built for 12h timeframe
+// it can run profitably on 4h+ - daily, but current settings made for 12h
+type Memory struct {
+	history.BaseStrategy
+	MemoryStrength float64
+	MemoryDecay    float64
+	DevLen         int
+	BandMult       float64
+}
+
+func (s *Memory) Name() string {
+	return "Memory"
+}
+
+func NewMemory() *Memory {
+	return &Memory{
+		BaseStrategy: *history.NewBaseStrategy("Memory"),
+		// MemoryStrength: 0.22, //0.14
+		// MemoryDecay:    0.6,  // 1.1
+		// DevLen:         23,   // 38
+		// BandMult:       2.1,  // 1.6
+		MemoryStrength: 0.14,
+		MemoryDecay:    1.1,
+		DevLen:         38,
+		BandMult:       1.6,
+	}
+}
+
+func (s *Memory) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
+	if len(bars) < s.DevLen+1 {
+		return history.Event{}, false
+	}
+
+	s.SetContext(symbol, bars[0])
+
+	alpha := 2.0 / (float64(s.DevLen) + 1)
+	var (
+		memory, emaDev                    float64
+		memInit, emaReady, prevBandsValid bool
+		prevUpper, prevLower              float64
+		trendState                        int
+		newBull, newBear                  bool
+	)
+	devSeed := make([]float64, 0, s.DevLen)
+
+	for k := len(bars) - 1; k >= 0; k-- {
+		price := bars[k].Close
+		hasPrev := k < len(bars)-1
+		var prevClose float64
+		if hasPrev {
+			prevClose = bars[k+1].Close
+		}
+
+		if !memInit {
+			memory = price
+			memInit = true
+		}
+		delta := price - memory
+		memory += delta * s.MemoryStrength
+		memory = memory*s.MemoryDecay + price*(1-s.MemoryDecay)
+		base := memory
+		dev := math.Abs(price - base)
+
+		if !emaReady {
+			devSeed = append(devSeed, dev)
+			if len(devSeed) >= s.DevLen {
+				var sum float64
+				for _, d := range devSeed {
+					sum += d
+				}
+				emaDev = sum / float64(s.DevLen)
+				emaReady = true
+			}
+		} else {
+			emaDev = alpha*dev + (1-alpha)*emaDev
+		}
+
+		upper := base + emaDev*s.BandMult
+		lower := base - emaDev*s.BandMult
+
+		var bullCond, bearCond bool
+		if hasPrev && emaReady && prevBandsValid {
+			bullCond = price > upper && prevClose <= prevUpper
+			bearCond = price < lower && prevClose >= prevLower
+		}
+
+		nb := bullCond && trendState != 1
+		nbe := bearCond && trendState != -1
+		if nb {
+			trendState = 1
+		} else if nbe {
+			trendState = -1
+		}
+		if emaReady {
+			prevUpper = upper
+			prevLower = lower
+			prevBandsValid = true
+		}
+		if k == 0 {
+			newBull, newBear = nb, nbe
+		}
+	}
+
+	if !newBull && !newBear {
+		return history.Event{}, false
+	}
+
+	portfolio := s.GetPortfolioManager()
+	positions := portfolio.PositionsForSymbol(symbol)
+	hasPosition := len(positions) > 0
+	var position *history.Position
+	if hasPosition {
+		position = positions[0]
+	}
+
+	execPrice := bars[0].Close
+	size := portfolio.GetStats().Equity * 0.65
+
+	if newBull {
+		if hasPosition && !position.Side {
+			s.Close()
+			return s.BuyEvent(size, execPrice), true
+		}
+		if !hasPosition {
+			return s.BuyEvent(size, execPrice), true
+		}
+	}
+	if newBear {
+		if hasPosition && position.Side {
+			s.Close()
+			return s.SellEvent(size, execPrice), true
+		}
+		if !hasPosition {
+			return s.SellEvent(size, execPrice), true
+		}
 	}
 
 	return history.Event{}, false
@@ -176,13 +318,14 @@ func (s *Turtle) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
 	longCondition := currHigh > upperEntry && prevHigh <= bars[2:entryLen+2].Highest(history.H)
 	shortCondition := currLow < lowerEntry && prevLow >= bars[2:entryLen+2].Lowest(history.L)
 
+	size := portfolio.GetStats().Equity * 0.65
+
 	// Entry logic (Pine: pyramiding=0, so reversal = close + open opposite)
 	if longCondition {
 		if hasPosition && !position.Side {
 			return s.Close(), true // close short first, next bar/call can enter long
 		}
 		if !hasPosition {
-			size := portfolio.GetStats().Equity * 0.50
 			return s.BuyEvent(size, bars[0].Close), true
 		}
 	}
@@ -191,7 +334,6 @@ func (s *Turtle) OnBar(symbol string, bars history.Bars) (history.Event, bool) {
 			return s.Close(), true // close long first, next bar/call can enter short
 		}
 		if !hasPosition {
-			size := portfolio.GetStats().Equity * 0.50
 			return s.SellEvent(size, bars[0].Close), true
 		}
 	}
@@ -327,9 +469,7 @@ func (s *PercScalper) OnBar(symbol string, bars history.Bars) (history.Event, bo
 	return history.Event{}, false
 }
 
-// Ratings strategy - matches Pine slk_strategy_ratings
-// Entry: new day only, when MA rating avg > StrongBound (long) or < -StrongBound (short)
-// Exit: trailing stop (loss 3*ATR, trail 5*ATR, trail_offset 2*ATR)
+// rating is a daily strategy
 type Ratings struct {
 	history.BaseStrategy
 	strongBound float64 // Strong Rating Bound (default 0.5)
@@ -466,7 +606,7 @@ func (s *Ratings) OnBar(symbol string, bars history.Bars) (history.Event, bool) 
 	}
 
 	// Entry logic: only on new day, no position (pyramiding=0)
-	size := portfolio.GetStats().Equity * 0.15 // 15% of equity (Pine default)
+	size := portfolio.GetStats().Equity * 0.65
 
 	if isNewDay && !hasPosition {
 		if ratingMA > s.strongBound {

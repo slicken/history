@@ -14,12 +14,12 @@ import (
 )
 
 var (
-	strategy     = NewPercScalper()           // percentage scalper strategy
-	hist         *history.History           // main struct to control bars data
+	strategy     history.Strategy
+	hist         *history.History            // main struct to control bars data
 	eventHandler = history.NewEventHandler() // event handler for managing strategies and events
 	events       = new(history.Events)       // collected events from the event handler
 	config       = new(Config)               // store argument configurations for example app
-	symbols      []string                   // list of symbols to handle bars
+	symbols      []string                    // list of symbols to handle bars
 	chart        charts.ChartBuilder
 )
 
@@ -37,6 +37,8 @@ type Config struct {
 	ctype string
 	// temp
 	saveAI_data bool
+	// strategy name: percs|memory|memory2|turtle|ratings|engulfing
+	strategyName string
 }
 
 func main() {
@@ -57,6 +59,7 @@ func main() {
 	flag.StringVar(&config.ctype, "ctype", "candlestick", "chartType: candlestick|ohlc|line|spline")
 	flag.StringVar(&config.symbol, "symbol", "", "singlle symboltf")
 	flag.BoolVar(&config.saveAI_data, "saveAI_data", false, "save dataset for predictor")
+	flag.StringVar(&config.strategyName, "strategy", "memory", "strategy: percs|memory|turtle|ratings|engulfing")
 	// Customize flag.Usage
 	flag.Usage = func() {
 		fmt.Printf(`Usage: %s [options]
@@ -70,11 +73,24 @@ Options:
   -ctype string               Chart type: candlestick|ohlc|line|spline (default 'candlestick')
   -symbol string              Single symboltf. e.g., 'BTCUSDT1d'
   -saveAI_data bool           Save dataset fir LSTM predictor strategy (default false)
+  -strategy string            Strategy: percs|memory|memory2|turtle|ratings|engulfing (default percs)
 
   `, os.Args[0])
 	}
 	// Parse flags
 	flag.Parse()
+	switch config.strategyName {
+	case "memory":
+		strategy = NewMemory()
+	case "turtle":
+		strategy = NewTurtle()
+	case "ratings":
+		strategy = NewRatings()
+	case "engulfing":
+		strategy = NewEngulfing()
+	default:
+		strategy = NewPercScalper()
+	}
 	// If --help or -h is provided, we show the custom help
 	if len(os.Args) < 2 || (os.Args[1] == "-h" || os.Args[1] == "--help") {
 		flag.Usage()
