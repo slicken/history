@@ -169,7 +169,7 @@ func (eh *EventHandler) AddStrategy(strategy Strategy) error {
 		}
 	}
 	eh.strategies = append(eh.strategies, strategy)
-	log.Println("[EVENTHANDLER] added strategy:", name)
+	log.Println("[EVENTHANDLER] added", name)
 	return nil
 }
 
