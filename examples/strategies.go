@@ -116,17 +116,33 @@ func (s *Memory) Name() string {
 	return "Memory"
 }
 
-func NewMemory() *Memory {
+func NewMemory(str float64, dec float64, dev int, bandm float64) *Memory {
 	return &Memory{
 		BaseStrategy: *history.NewBaseStrategy("Memory"),
-		// MemoryStrength: 0.22, //0.14
-		// MemoryDecay:    0.6,  // 1.1
-		// DevLen:         23,   // 38
-		// BandMult:       2.1,  // 1.6
-		MemoryStrength: 0.14,
-		MemoryDecay:    1.1,
-		DevLen:         38,
-		BandMult:       1.6,
+		MemoryStrength: str,
+		MemoryDecay:    dec,
+		DevLen:         dev,
+		BandMult:       bandm,
+
+		// MemoryStrength: 0.12, // default
+		// MemoryDecay:    0.96,
+		// DevLen:         34,
+		// BandMult:       1.6,
+
+		// MemoryStrength: 0.22, // 12h shortSwing 
+		// MemoryDecay:    0.6,
+		// DevLen:         23,
+		// BandMult:       2.1,
+		
+		// MemoryStrength: 0.22, // new test
+		// MemoryDecay:    0.51,
+		// DevLen:         16,
+		// BandMult:       2,
+
+		// MemoryStrength: 0.14, // 12h longSwing
+		// MemoryDecay:    1.1,
+		// DevLen:         38,
+		// BandMult:       1.6,
 	}
 }
 

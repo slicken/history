@@ -3,6 +3,3 @@
 examples/examples
 examples/history.db
 examples/data/
-examples/lstm_training/venv
-examples/lstm_training/data
-examples/lstm_training/models

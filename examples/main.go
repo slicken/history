@@ -79,9 +79,23 @@ Options:
 	}
 	// Parse flags
 	flag.Parse()
+	if config.symbol != "" {
+		if _, tf := history.SplitSymbol(config.symbol); tf == "" {
+			if !history.TFIsValid(config.tf) {
+				log.Fatalf("invalid timeframe %q: use -symbol with suffix (e.g. BTCUSDT12h) or set -tf to a valid value", config.tf)
+			}
+			config.symbol += config.tf
+		}
+	}
 	switch config.strategyName {
-	case "memory":
-		strategy = NewMemory()
+	case "memory1":
+		strategy = NewMemory(0.12, 0.96, 34, 1.6)
+	case "memory2":
+		strategy = NewMemory(0.22, 0.6, 23, 2.1)
+	case "memory3":
+		strategy = NewMemory(0.22, 0.51, 16, 2)
+	case "memory4":
+		strategy = NewMemory(0.14, 1.1, 38, 1.6)
 	case "turtle":
 		strategy = NewTurtle()
 	case "ratings":

@@ -399,6 +399,95 @@ func NewPortfolioManager(initialBalance float64) *PortfolioManager
 // - Real-time unrealized PnL tracking
 ```
 
-### Utility Functions (utils.go)
+## Example Strategies
 
+The `examples/` app ships with a set of production-oriented strategies designed for longer holding periods and swing-to-position trading. Each strategy implements the `history.Strategy` interface and can be backtested via the built-in tester or run live through the event handler.
+
+Select a strategy with the `-strategy` flag:
+
+```bash
+go run . -symbol=BTCUSDT12h -strategy=memory1
 ```
+or run on all loaded symbols
+
+```bash
+go run . -quote=USDT -tf=1d -strategy=memory1
+```
+
+Backtest results can be viewed at `http://localhost:8080/test` after starting the example server.
+
+### Memory
+
+A trend-following strategy built around a decaying price memory line with adaptive deviation bands. Entries trigger on band breakouts; the system flips or opens positions on confirmed trend changes. Designed primarily for **12h** bars, but viable on **4h and daily** timeframes with tuned parameters.
+
+Position sizing uses 65% of current equity per trade.
+
+| Flag       | MemoryStrength | MemoryDecay | DevLen | BandMult | Profile         |
+|------------|----------------|-------------|--------|----------|-----------------|
+| `memory1`  | 0.12           | 0.96        | 34     | 1.6      | Default         |
+| `memory2`  | 0.22           | 0.60        | 23     | 2.1      | 12h short swing |
+| `memory3`  | 0.22           | 0.51        | 16     | 2.0      | Experimental    |
+| `memory4`  | 0.14           | 1.10        | 38     | 1.6      | 12h long swing  |
+
+#### memory1 results (start balance 10000 on 5000 bars on 12h timeframe)
+```
+2026/05/27 10:24:25 [TEST] Memory completed with 130 Events (129 Trades)
+2026/05/27 10:24:25 [TEST] Final Balance: 32728.91 (+227.29%)
+2026/05/27 10:24:25 [TEST] 1 open position(s), Unrealized P&L: +244.71, Equity: 32973.62
+2026/05/27 10:24:25 [TEST] Win Rate: 37.21% [W:48|L:81]
+2026/05/27 10:24:25 [TEST] Max Drawdown: 43.22%
+
+2026/05/27 10:27:16 [TEST] Memory completed with 87 Events (86 Trades)
+2026/05/27 10:27:16 [TEST] Final Balance: 1184618.52 (+11746.19%)
+2026/05/27 10:27:16 [TEST] 1 open position(s), Unrealized P&L: -16263.95, Equity: 1168354.57
+2026/05/27 10:27:16 [TEST] Win Rate: 48.84% [W:42|L:44]
+2026/05/27 10:27:16 [TEST] Max Drawdown: 59.50%
+
+2026/05/27 10:28:36 [TEST] Memory completed with 124 Events (123 Trades)
+2026/05/27 10:28:36 [TEST] Final Balance: 188390.82 (+1783.91%)
+2026/05/27 10:28:36 [TEST] 1 open position(s), Unrealized P&L: -213.66, Equity: 188177.15
+2026/05/27 10:28:36 [TEST] Win Rate: 42.28% [W:52|L:71]
+2026/05/27 10:28:36 [TEST] Max Drawdown: 53.15%
+```
+
+### Turtle
+
+Classic Donchian breakout system modeled after the original Turtle Trading rules. Enters on a **35-bar** channel breakout, exits on a **20-bar** channel reversal, and uses a **2× ATR(20)** stop from entry. Suited for multi-day to multi-week holds on higher timeframes.
+
+#### turtle results (start balance 10000 on 5000 bars on d1 timeframe)
+```
+2026/05/27 10:32:52 [TEST] Turtle completed with 142 Events (71 Trades)
+2026/05/27 10:32:52 [TEST] Final Balance: 120848.85 (+1108.49%)
+2026/05/27 10:32:52 [TEST] Win Rate: 38.03% [W:27|L:44]
+2026/05/27 10:32:52 [TEST] Max Drawdown: 60.44%
+
+2026/05/27 10:35:56 [TEST] Turtle completed with 92 Events (46 Trades)
+2026/05/27 10:35:56 [TEST] Final Balance: 401034.12 (+3910.34%)
+2026/05/27 10:35:56 [TEST] Win Rate: 39.13% [W:18|L:28]
+2026/05/27 10:35:56 [TEST] Max Drawdown: 67.84%
+
+2026/05/27 10:36:31 [TEST] Turtle completed with 127 Events (63 Trades)
+2026/05/27 10:36:31 [TEST] Final Balance: 201569.88 (+1915.70%)
+2026/05/27 10:36:31 [TEST] 1 open position(s), Unrealized P&L: +3745.46, Equity: 205315.34
+2026/05/27 10:36:31 [TEST] Win Rate: 49.21% [W:31|L:32]
+2026/05/27 10:36:31 [TEST] Max Drawdown: 51.93%
+```
+
+### PercScalper
+
+A percentage-dip accumulation strategy (default: buy on **2.5%** intrabar dips). Supports pyramiding up to 20 positions with collective profit tracking, trailing stops, and optional time-based exits. More active than the other strategies but still oriented toward capturing larger moves rather than scalping tick-by-tick.
+
+This is the **default** strategy when no `-strategy` flag is provided.
+
+#### percscalper results (start balance 10000 on 5000 bars on d1 timeframe)
+```
+2026/05/27 10:42:30 [TEST] PercScalper completed with 622 Events (301 Trades)
+2026/05/27 10:42:30 [TEST] Final Balance: 66723.48 (+567.23%)
+2026/05/27 10:42:30 [TEST] 20 open position(s), Unrealized P&L: -1204.45, Equity: 65519.03
+2026/05/27 10:42:30 [TEST] Win Rate: 77.08% [W:232|L:69]
+2026/05/27 10:42:30 [TEST] Max Drawdown: 34.73%
+```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
